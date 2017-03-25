@@ -61,7 +61,7 @@ var tvar = name => ({
   name,
 });
 
-var TExists = 'TExsts';
+var TExists = 'TExists';
 var texists = name => ({
   tag: TExists,
   name,
@@ -201,8 +201,8 @@ var isComplete = c => {
 var snoc = (c, e) => [e].concat(c);
 var empty = [];
 var append = (a, b) => b.concat(a);
-var appendElems = (c, es) => append(c, es);
 var context = c => c.slice(0).reverse();
+var appendElems = (c, es) => append(c, context(es));
 var dropMarker = (m, g) => {
   for(var i = 0, l = g.length; i < l; i++)
     if(elemEq(g[i], m)) return g.slice(i + 1);
@@ -419,11 +419,11 @@ var instantiateL = (state, gamma, alpha, a) => {
     var alpha2 = r2.tvar;
     var r3 = instantiateR(
       r2.state,
-      insertAt(gamma, cexists(alpha), [
+      insertAt(gamma, cexists(alpha), context([
         cexists(alpha2),
         cexists(alpha1),
         cexistssolved(alpha, tfun(texists(alpha1), texists(alpha2))),
-      ]),
+      ])),
       a.left,
       alpha1
     );
@@ -474,11 +474,11 @@ var instantiateR = (state, gamma, a, alpha) => {
     var alpha2 = r2.tvar;
     var r3 = instantiateL(
       r2.state,
-      insertAt(gamma, cexists(alpha), [
+      insertAt(gamma, cexists(alpha), context([
         cexists(alpha2),
         cexists(alpha1),
         cexistssolved(alpha, tfun(texists(alpha1), texists(alpha2))),
-      ]),
+      ])),
       alpha1,
       a.left
     );
@@ -632,11 +632,11 @@ var typeapplysynth = (state, gamma, type, e) => {
     var alpha2 = r2.tvar;
     var r3 = typecheck(
       r2.state,
-      insertAt(gamma, [
+      insertAt(gamma, context([
         cexists(alpha2),
         cexists(alpha1),
         cexistssolved(alpha, tfun(texists(alpha1), texists(alpha2))),
-      ]),
+      ])),
       e,
       texists(alpha1)
     );
@@ -687,7 +687,18 @@ var eid = eanno(eabs('x', evar('x')), tforall('t', tfun(tvar('t'), tvar('t'))));
 
   // (\id -> id id ()) ((\x -> x) : forall t . t -> t)
   eabs('id',
-    eapp(eapp(eapp(
-      eanno(evar('id'),
-        tforall('t', tfun(tvar('t'), tvar('t')))), evar('id')), eunit), eid)),
+    eapp(
+      eapp(
+        eapp(
+          eanno(
+            evar('id'),
+            tforall('t', tfun(tvar('t'), tvar('t')))
+          ),
+          evar('id')
+        ),
+        eunit
+      ),
+      eid
+    )
+  ),
 ].forEach(test);
