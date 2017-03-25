@@ -327,7 +327,7 @@ var freshVar = state => ({
   state: clone(state, 'var', state.var + 1),
 });
 var freshTVar = state => ({
-  var: "'" + state.tvar,
+  tvar: "'" + state.tvar,
   state: clone(state, 'tvar', state.tvar + 1),
 });
 var freshTVars = (state, n) => {
@@ -567,7 +567,7 @@ var typesynth = (state, gamma, expr) => {
     };
   }
   if(expr.tag === EUnit)
-    return { state, context: gamma, type: TUnit };
+    return { state, context: gamma, type: tunit };
   if(expr.tag === EAbs) {
     var r1 = freshVar(state);
     var x_ = r1.var;
@@ -662,7 +662,32 @@ var infer = expr => {
   return apply(r.context, r.type);
 };
 
+// Test
+var test = e => {
+  console.log(exprStr(e));
+  try {
+    var t = infer(e);
+    console.log(typeStr(t));
+  } catch(e) {
+    console.log('' + e);
+  }
+  console.log();
+};
+
 var eid = eanno(eabs('x', evar('x')), tforall('t', tfun(tvar('t'), tvar('t'))));
-console.log(exprStr(eid));
-var t = infer(eid);
-console.log(typeStr(t));
+[
+  eunit,
+
+  eapp(eabs('x', evar('x')), eunit),
+
+  eabs('x', evar('x')),
+
+  // (\x -> x) : forall t . t -> t
+  eid,
+
+  // (\id -> id id ()) ((\x -> x) : forall t . t -> t)
+  eabs('id',
+    eapp(eapp(eapp(
+      eanno(evar('id'),
+        tforall('t', tfun(tvar('t'), tvar('t')))), evar('id')), eunit), eid)),
+].forEach(test);
