@@ -178,7 +178,7 @@ var elemStr = e => {
   throw new Error('Invalid elem in elemStr: ' + e);
 };
 
-var contextStr = c => '[' + c.map(elemStr).join(', ') + ']';
+var contextStr = c => '[' + c.map(elemStr).reverse().join(', ') + ']';
 
 var elemEq = (a, b) => {
   if(a.tag === CForall) return b.tag === CForall && a.name === b.name;
@@ -210,27 +210,47 @@ var dropMarker = (m, g) => {
 };
 var breakMarker = (m, g) => {
   for(var i = 0, l = g.length; i < l; i++)
-    if(elemEq(g[i], m)) return [g.slice(0, i), g.slice(i + 1)];
-  return [g, []];
+    if(elemEq(g[i], m)) return [g.slice(i + 1), g.slice(0, i)];
+  return [[], g];
 };
 
 // Context
 var contains = (v, a) => a.indexOf(v) >= 0;
 
-var existentials = c =>
-  c.filter(e => e.tag === CExists || e.tag === CExistsSolved).map(x => x.name);
+var existentials = c => {
+  var r = [];
+  for(var i = 0, l = c.length; i < l; i++)
+    if(c[i].tag === CExists || c[i].tag === CExistsSolved) r.push(c[i].name);
+  return r;
+};
 
-var unsolved = c =>
-  c.filter(e => e.tag === CExists).map(x => x.name);
+var unsolved = c => {
+  var r = [];
+  for(var i = 0, l = c.length; i < l; i++)
+    if(c[i].tag === CExists) r.push(c[i].name);
+  return r;
+};
 
-var vars = c =>
-  c.filter(e => e.tag === CVar).map(x => x.name);
+var vars = c => {
+  var r = [];
+  for(var i = 0, l = c.length; i < l; i++)
+    if(c[i].tag === CVar) r.push(c[i].name);
+  return r;
+};
 
-var foralls = c =>
-  c.filter(e => e.tag === CForall).map(x => x.name);
+var foralls = c => {
+  var r = [];
+  for(var i = 0, l = c.length; i < l; i++)
+    if(c[i].tag === CForall) r.push(c[i].name);
+  return r;
+};
 
-var markers = c =>
-  c.filter(e => e.tag === CMarker).map(x => x.name);
+var markers = c => {
+  var r = [];
+  for(var i = 0, l = c.length; i < l; i++)
+    if(c[i].tag === CMarker) r.push(c[i].name);
+  return r;
+};
 
 var wf = c => {
   if(c.length === 0) return true;
@@ -256,7 +276,7 @@ var typewf = (c, t) => {
   if(t.tag === TFun) return typewf(c, t.left) && typewf(c, t.right);
   if(t.tag === TForall) return typewf(snoc(c, cforall(t.arg)), t.type);
   if(t.tag === TExists) return contains(t.name, existentials(c));
-  throw new Error('Invalid type in typwf: ' + t);
+  throw new Error('Invalid type in typewf: ' + t);
 };
 
 var checkwf = c => {
@@ -332,7 +352,7 @@ var freshTVar = state => ({
 });
 var freshTVars = (state, n) => {
   var r = [];
-  for(var i = 0; i < n; i++) r.push("'" + state.tvar + i);
+  for(var i = 0; i < n; i++) r.push("'" + (state.tvar + i));
   return {
     tvars: r,
     state: clone(state, 'tvar', state.tvar + n),
@@ -341,6 +361,7 @@ var freshTVars = (state, n) => {
 
 // Type
 var subtype = (state, gamma, t1, t2) => {
+  // console.log('subtype ' + contextStr(gamma) + ' ' + typeStr(t1) + ' ' + typeStr(t2));
   checktypewf(gamma, t1);
   checktypewf(gamma, t2);
   if(t1.tag === TVar && t2.tag === TVar && t1.name === t2.name)
@@ -353,7 +374,12 @@ var subtype = (state, gamma, t1, t2) => {
     return { state, context: gamma };
   if(t1.tag === TFun && t2.tag === TFun) {
     var r = subtype(state, gamma, t2.left, t1.left);
-    return subtype(r.state, r.context, t1.right, t2.right);
+    return subtype(
+      r.state,
+      r.context,
+      apply(r.context, t1.right),
+      apply(r.context, t2.right)
+    );
   }
   if(t2.tag === TForall) {
     var r1 = freshTVar(state);
@@ -397,6 +423,7 @@ var subtype = (state, gamma, t1, t2) => {
 };
 
 var instantiateL = (state, gamma, alpha, a) => {
+  // console.log('instantiateL ' + contextStr(gamma) + ' ' + alpha + ' ' + typeStr(a));
   checktypewf(gamma, a);
   checktypewf(gamma, texists(alpha));
   var gamma_ = isMonotype(a)? solve(gamma, alpha, a): null;
@@ -452,6 +479,7 @@ var instantiateL = (state, gamma, alpha, a) => {
 };
 
 var instantiateR = (state, gamma, a, alpha) => {
+  // console.log('instantiateR ' + contextStr(gamma) + ' ' + typeStr(a) + ' ' + alpha);
   checktypewf(gamma, a);
   checktypewf(gamma, texists(alpha));
   var gamma_ = isMonotype(a)? solve(gamma, alpha, a): null;
@@ -507,6 +535,7 @@ var instantiateR = (state, gamma, a, alpha) => {
 };
 
 var typecheck = (state, gamma, expr, type) => {
+  // console.log('typecheck', contextStr(gamma), exprStr(expr), typeStr(type));
   checktypewf(gamma, type);
   if(expr.tag === EUnit && type.tag === TUnit)
     return { state, context: gamma };
@@ -548,6 +577,7 @@ var typecheck = (state, gamma, expr, type) => {
 };
 
 var typesynth = (state, gamma, expr) => {
+  // console.log('typesynth', contextStr(gamma), exprStr(expr));
   checkwf(gamma);
   if(expr.tag === EVar) {
     var type = findVarType(gamma, expr.name);
@@ -614,6 +644,7 @@ var typesynth = (state, gamma, expr) => {
 };
 
 var typeapplysynth = (state, gamma, type, e) => {
+  // console.log('typeapplysynth', contextStr(gamma), typeStr(type), exprStr(e));
   checktypewf(gamma, type);
   if(type.tag === TForall) {
     var r = freshTVar(state);
@@ -632,10 +663,10 @@ var typeapplysynth = (state, gamma, type, e) => {
     var alpha2 = r2.tvar;
     var r3 = typecheck(
       r2.state,
-      insertAt(gamma, context([
+      insertAt(gamma, cexists(type.name), context([
         cexists(alpha2),
         cexists(alpha1),
-        cexistssolved(alpha, tfun(texists(alpha1), texists(alpha2))),
+        cexistssolved(type.name, tfun(texists(alpha1), texists(alpha2))),
       ])),
       e,
       texists(alpha1)
@@ -684,6 +715,12 @@ var eid = eanno(eabs('x', evar('x')), tforall('t', tfun(tvar('t'), tvar('t'))));
 
   // (\x -> x) : forall t . t -> t
   eid,
+
+  // idunit
+  eapp(eabs('id', eapp(evar('id'), eunit)), eid),
+
+  // idid
+  eanno(eapp(eid, eid), tforall('t', tfun(tvar('t'), tvar('t')))),
 
   // (\id -> id id ()) ((\x -> x) : forall t . t -> t)
   eabs('id',
