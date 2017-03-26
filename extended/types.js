@@ -78,6 +78,7 @@ var tapps = function() {
 };
 
 var tunit = tcon('Unit', K.star);
+var tbool = tcon('Bool', K.star);
 
 var str = t => {
   if(t.tag === TCon) return t.name;
@@ -164,6 +165,7 @@ module.exports = {
   tapps,
 
   tunit,
+  tbool,
 
   str,
   eq,

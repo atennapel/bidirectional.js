@@ -5,7 +5,7 @@ var C = require('./context');
 
 var infer = require('./typechecker').infer;
 
-var Bool = T.tcon('Bool');
+var Bool = T.tbool;
 var Int = T.tcon('Int');
 var List = T.tcon('List', K.star2);
 var Pair = T.tcon('Pair', K.star3);
@@ -53,6 +53,7 @@ var abs = E.eabss;
 var evar = E.evar;
 var app = E.eapps;
 var eunit = E.eunit;
+var eif = E.eif;
 
 var eid = eanno(abs('x', evar('x')), tforall('t', fun(tvar('t'), tvar('t'))));
 [
@@ -104,4 +105,15 @@ var eid = eanno(abs('x', evar('x')), tforall('t', fun(tvar('t'), tvar('t'))));
         app(evar('id'), evar('one')), app(evar('id'), evar('True')))),
         fun(tforall('t', fun(tvar('t'), tvar('t'))), tapps(Pair, Int, Bool))
       ), eid),
+
+  eif(evar('True'), evar('False'), evar('True')),
+  eif(evar('one'), evar('False'), evar('True')),
+  eif(evar('True'), evar('one'), evar('True')),
+  eif(evar('True'), evar('False'), evar('one')),
+  eif(evar('True'), evar('one'), evar('one')),
+
+  abs('x', eif(evar('x'), evar('one'), evar('one'))),
+  abs('x', 'y', eif(evar('x'), evar('y'), evar('one'))),
+  abs('x', 'y', eif(evar('x'), evar('y'), evar('y'))),
+  abs('x', 'y', eif(evar('x'), evar('y'), evar('x'))),
 ].forEach(test);

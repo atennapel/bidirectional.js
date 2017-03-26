@@ -383,7 +383,7 @@ var typecheck = (state, gamma, expr, type) => {
 };
 
 var typesynth = (state, gamma, expr) => {
-  // console.log('typesynth', contextStr(gamma), exprStr(expr));
+  // console.log('typesynth', C.contextStr(gamma), E.str(expr));
   checkwf(gamma);
   if(expr.tag === E.EVar) {
     var type = findVarType(gamma, expr.name);
@@ -445,6 +445,36 @@ var typesynth = (state, gamma, expr) => {
       apply(r.context, r.type),
       expr.right
     );
+  }
+  if(expr.tag === E.EIf) {
+    var r1 = typecheck(
+      state,
+      gamma,
+      expr.cond,
+      T.tbool
+    );
+    var r2 = freshTVar(r1.state);
+    var tv = r2.tvar;
+    var r3 = typecheck(
+      r2.state,
+      C.appendElems(r1.context, [
+        C.cmarker(tv),
+        C.cexists(tv),
+      ]),
+      expr.bodyTrue,
+      T.texists(tv)
+    );
+    var r4 = typecheck(
+      r3.state,
+      r3.context,
+      expr.bodyFalse,
+      apply(r3.context, T.texists(tv))
+    );
+    return {
+      state: r4.state,
+      context: C.dropMarker(C.cmarker(tv), r4.context),
+      type: apply(r4.context, T.texists(tv)),
+    };
   }
   throw new Error('typesynth failed on ' + expr);
 };

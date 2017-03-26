@@ -45,6 +45,14 @@ var eanno = (expr, type) => ({
   type,
 });
 
+var EIf = 'EIf';
+var eif = (cond, bodyTrue, bodyFalse) => ({
+  tag: EIf,
+  cond,
+  bodyTrue,
+  bodyFalse,
+});
+
 var str = e => {
   if(e.tag === EVar) return e.name;
   if(e.tag === EUnit) return '()';
@@ -53,6 +61,9 @@ var str = e => {
     return '(' + str(e.left) + ' ' + str(e.right) + ')';
   if(e.tag === EAnno)
     return '(' + str(e.expr) + ' : ' + T.str(e.type) + ')';
+  if(e.tag === EIf)
+    return '(if ' + str(e.cond) + ' then ' + str(e.bodyTrue) +
+      ' else ' + str(e.bodyFalse) + ')';
   throw new Error('Invalid expr in exprStr: ' + e);
 };
 
@@ -65,6 +76,12 @@ var subst = (e1, x, e2) => {
     return eapp(subst(e1, x, e2.left), subst(e1, x, e2.right));
   if(e2.tag === EAnno)
     return eanno(subst(e1, x, e2.expr), e2.type);
+  if(e2.tag === EIf)
+    return eif(
+      subst(e1, x, e2.cond),
+      subst(e1, x, e2.bodyTrue),
+      subst(e1, x, e2.bodyFalse)
+    );
   throw new Error('Cannot subst over ' + e2);
 };
 
@@ -85,6 +102,9 @@ module.exports = {
 
   EAnno,
   eanno,
+
+  EIf,
+  eif,
 
   str,
   subst,

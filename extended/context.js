@@ -34,9 +34,9 @@ var cmarker = name => ({
 
 var elemStr = e => {
   if(e.tag === CForall) return e.name;
-  if(e.tag === CVar) return e.name + ' : ' + typeStr(e.type);
+  if(e.tag === CVar) return e.name + ' : ' + T.str(e.type);
   if(e.tag === CExists) return e.name + '^';
-  if(e.tag === CExistsSolved) return e.name + ' = ' + typeStr(e.type);
+  if(e.tag === CExistsSolved) return e.name + ' = ' + T.str(e.type);
   if(e.tag === CMarker) return '|>' + e.name + '^';
   throw new Error('Invalid elem in elemStr: ' + e);
 };
