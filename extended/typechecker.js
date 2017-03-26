@@ -1,3 +1,11 @@
+/* TODO:
+ *  tvars/vars with names instead of numbers
+ *  fresh should keep kind
+ *  newtypes/pack/unpack
+ *  literals (ints/floats/string/bool)
+ *  row polymorphism
+ *  typeclasses
+ */
 var E = require('./exprs');
 var K = require('./kinds');
 var T = require('./types');
