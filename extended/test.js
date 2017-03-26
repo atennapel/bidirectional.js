@@ -54,6 +54,7 @@ var evar = E.evar;
 var app = E.eapps;
 var eunit = E.eunit;
 var eif = E.eif;
+var fix = E.efix;
 
 var eid = eanno(abs('x', evar('x')), tforall('t', fun(tvar('t'), tvar('t'))));
 [
@@ -116,4 +117,14 @@ var eid = eanno(abs('x', evar('x')), tforall('t', fun(tvar('t'), tvar('t'))));
   abs('x', 'y', eif(evar('x'), evar('y'), evar('one'))),
   abs('x', 'y', eif(evar('x'), evar('y'), evar('y'))),
   abs('x', 'y', eif(evar('x'), evar('y'), evar('x'))),
+
+  fix,
+  app(fix, abs('f', 'x',
+    eif(evar('True'),
+      app(evar('inc'), evar('x')),
+      app(evar('f'), evar('x'))))),
+  app(fix, abs('f', 'x',
+    eif(evar('True'),
+      evar('x'),
+      app(evar('f'), evar('x'))))),
 ].forEach(test);

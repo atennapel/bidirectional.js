@@ -53,6 +53,9 @@ var eif = (cond, bodyTrue, bodyFalse) => ({
   bodyFalse,
 });
 
+var EFix = 'Fix';
+var efix = { tag: EFix };
+
 var str = e => {
   if(e.tag === EVar) return e.name;
   if(e.tag === EUnit) return '()';
@@ -64,12 +67,14 @@ var str = e => {
   if(e.tag === EIf)
     return '(if ' + str(e.cond) + ' then ' + str(e.bodyTrue) +
       ' else ' + str(e.bodyFalse) + ')';
+  if(e.tag === EFix) return 'fix';
   throw new Error('Invalid expr in exprStr: ' + e);
 };
 
 var subst = (e1, x, e2) => {
   if(e2.tag === EVar) return e2.name === x? e1: e2;
   if(e2.tag === EUnit) return e2;
+  if(e2.tag === EFix) return e2;
   if(e2.tag === EAbs)
     return e2.arg === x? e2: eabs(e2.arg, subst(e1, x, e2.body));
   if(e2.tag === EApp)
@@ -105,6 +110,9 @@ module.exports = {
 
   EIf,
   eif,
+
+  EFix,
+  efix,
 
   str,
   subst,

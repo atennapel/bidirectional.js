@@ -476,6 +476,14 @@ var typesynth = (state, gamma, expr) => {
       type: apply(r4.context, T.texists(tv)),
     };
   }
+  if(expr.tag === E.EFix) {
+    return {
+      state,
+      context: gamma,
+      type: T.tforall('t',
+        T.tfun(T.tfun(T.tvar('t'), T.tvar('t')), T.tvar('t'))),
+    };
+  }
   throw new Error('typesynth failed on ' + expr);
 };
 
