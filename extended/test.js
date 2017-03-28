@@ -34,6 +34,7 @@ var env = [
       tapp(f, b)
     ))),
   cvar('pair', tforalls([a, b], fun(a, b, tapps(Pair, a, b)))),
+  cvar('Pair', Pair),
 ];
 
 var test = e => {
@@ -42,7 +43,7 @@ var test = e => {
     var t = infer(e, env);
     console.log(T.str(t) + ' : ' + K.str(t.kind));
   } catch(e) {
-    console.log('' + e);
+    console.log('' + e.stack);
   }
   console.log();
 };
@@ -128,4 +129,6 @@ var eid = eanno(abs('x', evar('x')), tforall(t, fun(t, t)));
     eif(evar('True'),
       evar('x'),
       app(evar('f'), evar('x'))))),
+
+  evar('Pair'),
 ].forEach(test);

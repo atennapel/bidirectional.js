@@ -24,7 +24,7 @@ var ktype3 = kfuns(ktype, ktype, ktype);
 
 var str = k => {
   if(k.tag === KCon) return k.name;
-  if(t.tag === KFun)
+  if(k.tag === KFun)
     return '(' + str(k.left) + ' -> ' + str(k.right) + ')';
   throw new Error('Invalid kind in kindStr: ' + k);
 };
