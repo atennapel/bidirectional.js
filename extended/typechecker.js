@@ -1,6 +1,5 @@
 /* TODO:
  *  tvars/vars with names instead of numbers
- *  fresh should keep kind
  *  newtypes/pack/unpack
  *  literals (ints/floats/string/bool)
  *  row polymorphism
@@ -37,7 +36,8 @@ var typewf = (c, t) => {
   if(t.tag === T.TCon) return true;
   if(t.tag === T.TFun) return typewf(c, t.left) && typewf(c, t.right);
   if(t.tag === T.TApp) return typewf(c, t.left) && typewf(c, t.right);
-  if(t.tag === T.TForall) return typewf(C.snoc(c, C.cforall(t.arg)), t.type);
+  if(t.tag === T.TForall)
+    return typewf(C.snoc(c, C.cforall(t.arg.name, t.arg.kind)), t.type);
   if(t.tag === T.TExists) return contains(t.name, C.existentials(c));
   throw new Error('Invalid type in typewf: ' + t);
 };
@@ -125,6 +125,8 @@ var subtype = (state, gamma, t1, t2) => {
   // console.log('subtype ' + C.contextStr(gamma) + ' ' + T.str(t1) + ' ' + T.str(t2));
   checktypewf(gamma, t1);
   checktypewf(gamma, t2);
+  if(!K.eq(t1.kind, t2.kind))
+    throw new Error('kind mismatch: ' + T.str(t1) + ' and ' + T.str(t2));
   if(t1.tag === T.TVar && t2.tag === T.TVar && t1.name === t2.name)
     return { state, context: gamma };
   if(t1.tag === T.TCon && t2.tag === T.TCon && t1.name === t2.name)
@@ -154,30 +156,32 @@ var subtype = (state, gamma, t1, t2) => {
   if(t2.tag === T.TForall) {
     var r1 = freshTVar(state);
     var v = r1.tvar;
+    var vkind = t2.arg.kind;
     var r2 = subtype(
       r1.state,
-      C.snoc(gamma, C.cforall(v)),
+      C.snoc(gamma, C.cforall(v, vkind)),
       t1,
-      T.subst(T.tvar(v), t2.arg, t2.type)
+      T.subst(T.tvar(v, vkind), t2.arg.name, t2.type)
     );
     return {
       state: r2.state,
-      context: C.dropMarker(C.cforall(v), r2.context),
+      context: C.dropMarker(C.cforall(v, vkind), r2.context),
     };
   }
   if(t1.tag === T.TForall) {
     var r1 = freshTVar(state);
     var v = r1.tvar;
+    var vkind = t1.arg.kind;
     var r2 = subtype(
       r1.state,
-      C.appendElems(gamma, [C.cmarker(v), C.cexists(v)]),
-      T.subst(T.texists(v), t1.arg, t1.type),
+      C.appendElems(gamma, [C.cmarker(v), C.cexists(v, vkind)]),
+      T.subst(T.texists(v, vkind), t1.arg.name, t1.type),
       t2
     );
     return {
       state: r2.state,
       context: C.dropMarker(C.cmarker(v), r2.context),
-    }
+    };
   }
   if(t1.tag === T.TExists
     && contains(t1.name, C.existentials(gamma))
@@ -256,15 +260,16 @@ var instantiateL = (state, gamma, alpha, a) => {
   if(a.tag === T.TForall) {
     var r1 = freshTVar(state);
     var beta_ = r1.tvar;
+    var vkind = a.arg.kind;
     var r2 = instantiateL(
       r1.state,
-      C.appendElems(gamma, [C.cforall(beta_)]),
+      C.appendElems(gamma, [C.cforall(beta_, vkind)]),
       alpha,
-      T.subst(T.tvar(beta_), a.arg, a.type)
+      T.subst(T.tvar(beta_, vkind), a.arg.name, a.type)
     );
     return {
       state: r2.state,
-      context: C.dropMarker(C.cforall(beta_), r2.context),
+      context: C.dropMarker(C.cforall(beta_, vkind), r2.context),
     };
   }
   throw new Error('instantiateL failed');
@@ -334,10 +339,11 @@ var instantiateR = (state, gamma, a, alpha) => {
   if(a.tag === T.TForall) {
     var r1 = freshTVar(state);
     var beta_ = r1.tvar;
+    var vkind = a.arg.kind;
     var r2 = instantiateR(
       r1.state,
-      C.appendElems(gamma, [C.cmarker(beta_), C.cexists(beta_)]),
-      T.subst(T.texists(beta_), a.arg, a.type),
+      C.appendElems(gamma, [C.cmarker(beta_), C.cexists(beta_, vkind)]),
+      T.subst(T.texists(beta_, vkind), a.arg.name, a.type),
       alpha
     );
     return {
@@ -356,15 +362,16 @@ var typecheck = (state, gamma, expr, type) => {
   if(type.tag === T.TForall) {
     var r1 = freshTVar(state);
     var alpha_ = r1.tvar;
+    var vkind = type.arg.kind;
     var r2 = typecheck(
       r1.state,
-      C.snoc(gamma, C.cforall(alpha_)),
+      C.snoc(gamma, C.cforall(alpha_, vkind)),
       expr,
-      T.subst(T.tvar(alpha_), type.arg, type.type)
+      T.subst(T.tvar(alpha_, vkind), type.arg.name, type.type)
     );
     return {
       state: r2.state,
-      context: C.dropMarker(C.cforall(alpha_), r2.context),
+      context: C.dropMarker(C.cforall(alpha_, vkind), r2.context),
     };
   }
   if(expr.tag === E.EAbs && type.tag === T.TFun) {
@@ -436,13 +443,13 @@ var typesynth = (state, gamma, expr) => {
     var tau = apply(delta_, T.tfun(T.texists(alpha), T.texists(beta)));
     var evars = C.unsolved(delta_);
     var r5 = freshTVars(r4.state, evars.length);
+    var tvarssub =
+      r5.tvars.map((x, i) => [T.tvar(x, evars[i].kind), evars[i].name]);
+    var tvars = tvarssub.map(x => x[0]);
     return {
       state: r5.state,
       context: delta,
-      type: T.tforalls(
-        r5.tvars,
-        T.substs(r5.tvars.map((x, i) => [T.tvar(x), evars[i]]), tau)
-      ),
+      type: T.tforalls(tvars, T.substs(tvarssub, tau)),
     };
   }
   if(expr.tag === E.EApp) {
@@ -485,11 +492,11 @@ var typesynth = (state, gamma, expr) => {
     };
   }
   if(expr.tag === E.EFix) {
+    var t = T.tvar('t');
     return {
       state,
       context: gamma,
-      type: T.tforall('t',
-        T.tfun(T.tfun(T.tvar('t'), T.tvar('t')), T.tvar('t'))),
+      type: T.tforall(t, T.tfun(T.tfun(t, t), t)),
     };
   }
   throw new Error('typesynth failed on ' + expr);
@@ -501,10 +508,11 @@ var typeapplysynth = (state, gamma, type, e) => {
   if(type.tag === T.TForall) {
     var r = freshTVar(state);
     var alpha_ = r.tvar;
+    var vkind = type.arg.kind;
     return typeapplysynth(
       r.state,
-      C.snoc(gamma, C.cexists(alpha_)),
-      T.subst(T.texists(alpha_), type.arg, type.type),
+      C.snoc(gamma, C.cexists(alpha_, vkind)),
+      T.subst(T.texists(alpha_, vkind), type.arg.name, type.type),
       e
     );
   }
@@ -515,7 +523,7 @@ var typeapplysynth = (state, gamma, type, e) => {
     var alpha2 = r2.tvar;
     var r3 = typecheck(
       r2.state,
-      C.insertAt(gamma, C.cexists(type.name), C.context([
+      C.insertAt(gamma, C.cexists(type.name, type.kind), C.context([
         C.cexists(alpha2),
         C.cexists(alpha1),
         C.cexistssolved(type.name, T.tfun(T.texists(alpha1), T.texists(alpha2))),

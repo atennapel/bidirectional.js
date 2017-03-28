@@ -1,9 +1,11 @@
 var T = require('./types');
+var K = require('./kinds');
 
 var CForall = 'CForall';
-var cforall = name => ({
+var cforall = (name, kind) => ({
   tag: CForall,
   name,
+  kind: kind || K.ktype,
 });
 
 var CVar = 'CVar';
@@ -14,9 +16,10 @@ var cvar = (name, type) => ({
 });
 
 var CExists = 'CExists';
-var cexists = name => ({
+var cexists = (name, kind) => ({
   tag: CExists,
   name,
+  kind: kind || K.ktype,
 });
 
 var CExistsSolved = 'CExistsSolved';
@@ -91,7 +94,7 @@ var existentials = c => {
 var unsolved = c => {
   var r = [];
   for(var i = 0, l = c.length; i < l; i++)
-    if(c[i].tag === CExists) r.push(c[i].name);
+    if(c[i].tag === CExists) r.push(c[i]);
   return r;
 };
 

@@ -4,27 +4,27 @@ var TCon = 'TCon';
 var tcon = (name, kind) => ({
   tag: TCon,
   name,
-  kind: kind || K.star,
+  kind: kind || K.ktype,
 });
 
 var TVar = 'TVar';
 var tvar = (name, kind) => ({
   tag: TVar,
   name,
-  kind: kind || K.star,
+  kind: kind || K.ktype,
 });
 
 var TExists = 'TExists';
 var texists = (name, kind) => ({
   tag: TExists,
   name,
-  kind: kind || K.star,
+  kind: kind || K.ktype,
 });
 
 var TForall = 'TForall';
 var tforall = (arg, type) => ({
   tag: TForall,
-  arg,
+  arg: arg,
   type,
   kind: type.kind,
 });
@@ -33,17 +33,17 @@ var tforalls = (args, type) =>
 
 var TFun = 'TFun';
 var tfun = (left, right) => {
-  if(!K.eq(left.kind, K.star))
-    throw new Error(str(left) + ' has invalid kind (' + K.star(left.kind)
+  if(!K.eq(left.kind, K.ktype))
+    throw new Error(str(left) + ' has invalid kind (' + K.str(left.kind)
       + ') in (' + str(left) + ' -> ' + str(right) + ')');
-  if(!K.eq(right.kind, K.star))
-    throw new Error(str(right) + ' has invalid kind (' + K.star(right.kind)
+  if(!K.eq(right.kind, K.ktype))
+    throw new Error(str(right) + ' has invalid kind (' + K.str(right.kind)
       + ') in (' + str(left) + ' -> ' + str(right) + ')');
   return {
     tag: TFun,
     left,
     right,
-    kind: K.star,
+    kind: K.ktype,
   };
 };
 var tfuns = function() {
@@ -77,15 +77,15 @@ var tapps = function() {
   return c;
 };
 
-var tunit = tcon('Unit', K.star);
-var tbool = tcon('Bool', K.star);
+var tunit = tcon('Unit', K.ktype);
+var tbool = tcon('Bool', K.ktype);
 
 var str = t => {
   if(t.tag === TCon) return t.name;
   if(t.tag === TVar) return t.name;
   if(t.tag === TExists) return t.name + '^';
   if(t.tag === TForall)
-    return '(forall ' + t.arg + ' . ' + str(t.type) + ')';
+    return '(forall ' + str(t.arg) + ' . ' + str(t.type) + ')';
   if(t.tag === TFun)
     return '(' + str(t.left) + ' -> ' + str(t.right) + ')';
   if(t.tag === TApp)
@@ -98,7 +98,7 @@ var eq = (a, b) => {
   if(a.tag === TVar) return b.tag === TVar && a.name === b.name;
   if(a.tag === TExists) return b.tag === TExists && a.name === b.name;
   if(a.tag === TForall)
-    return b.tag === TForall && a.arg === b.arg && eq(a.type, b.type);
+    return b.tag === TForall && eq(a.arg, b.arg) && eq(a.type, b.type);
   if(a.tag === TFun)
     return b.tag === TFun && eq(a.left, b.left) && eq(a.right, b.right);
   if(a.tag === TApp)
@@ -119,7 +119,7 @@ var isMonotype = t => {
 var freeTVars = t => {
   if(t.tag === TCon) return [];
   if(t.tag === TVar) return [t.name];
-  if(t.tag === TForall) return freeTVars(t.type).filter(v => v !== t.arg);
+  if(t.tag === TForall) return freeTVars(t.type).filter(v => v !== t.arg.name);
   if(t.tag === TExists) return [t.name];
   if(t.tag === TFun) return freeTVars(t.left).concat(freeTVars(t.right));
   if(t.tag === TApp) return freeTVars(t.left).concat(freeTVars(t.right));
@@ -130,7 +130,7 @@ var subst = (t1, v, t2) => {
   if(t2.tag === TCon) return t2;
   if(t2.tag === TVar) return t2.name === v? t1: t2;
   if(t2.tag === TForall)
-    return t2.arg === v? t2: tforall(t2.arg, subst(t1, v, t2.type));
+    return t2.arg.name === v? t2: tforall(t2.arg, subst(t1, v, t2.type));
   if(t2.tag === TExists) return t2.name === v? t1: t2;
   if(t2.tag === TFun)
     return tfun(subst(t1, v, t2.left), subst(t1, v, t2.right));

@@ -18,9 +18,9 @@ var kfuns = function() {
   return c;
 };
 
-var star = kcon('*');
-var star2 = kfun(star, star);
-var star3 = kfuns(star, star, star);
+var ktype = kcon('Type');
+var ktype2 = kfun(ktype, ktype);
+var ktype3 = kfuns(ktype, ktype, ktype);
 
 var str = k => {
   if(k.tag === KCon) return k.name;
@@ -44,9 +44,9 @@ module.exports = {
   kfun,
   kfuns,
 
-  star,
-  star2,
-  star3,
+  ktype,
+  ktype2,
+  ktype3,
 
   str,
   eq,

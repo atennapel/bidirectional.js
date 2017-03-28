@@ -7,8 +7,8 @@ var infer = require('./typechecker').infer;
 
 var Bool = T.tbool;
 var Int = T.tcon('Int');
-var List = T.tcon('List', K.star2);
-var Pair = T.tcon('Pair', K.star3);
+var List = T.tcon('List', K.ktype2);
+var Pair = T.tcon('Pair', K.ktype3);
 
 var cvar = C.cvar;
 var fun = T.tfuns;
@@ -17,24 +17,23 @@ var tapps = T.tapps;
 var tforall = T.tforall;
 var tforalls = T.tforalls;
 var tvar = T.tvar;
+var a = tvar('a');
+var b = tvar('b');
+var t = tvar('t');
+var f = tvar('f', K.ktype2);
 var env = [
   cvar('True', Bool),
   cvar('False', Bool),
   cvar('inc', fun(Int, Int)),
   cvar('one', Int),
-  cvar('singleton', tforall('t', fun(tvar('t'), tapp(List, tvar('t'))))),
-  cvar('map', tforalls(['a', 'b'],
+  cvar('singleton', tforall(t, fun(t, tapp(List, t)))),
+  cvar('map', tforalls([f, a, b],
     fun(
-      fun(tvar('a'), tvar('b')),
-      tapp(List, tvar('a')),
-      tapp(List, tvar('b'))
+      fun(a, b),
+      tapp(f, a),
+      tapp(f, b)
     ))),
-  cvar('pair', tforalls(['a', 'b'],
-    fun(
-      tvar('a'),
-      tvar('b'),
-      tapps(Pair, tvar('a'), tvar('b'))
-    ))),
+  cvar('pair', tforalls([a, b], fun(a, b, tapps(Pair, a, b)))),
 ];
 
 var test = e => {
@@ -56,7 +55,7 @@ var eunit = E.eunit;
 var eif = E.eif;
 var fix = E.efix;
 
-var eid = eanno(abs('x', evar('x')), tforall('t', fun(tvar('t'), tvar('t'))));
+var eid = eanno(abs('x', evar('x')), tforall(t, fun(t, t)));
 [
   eunit,
 
@@ -71,14 +70,14 @@ var eid = eanno(abs('x', evar('x')), tforall('t', fun(tvar('t'), tvar('t'))));
   app(abs('id', app(evar('id'), eunit)), eid),
 
   // idid
-  eanno(app(eid, eid), tforall('t', fun(tvar('t'), tvar('t')))),
+  eanno(app(eid, eid), tforall(t, fun(t, t))),
 
   // (\id -> id id ()) ((\x -> x) : forall t . t -> t)
   abs('id',
     app(
       eanno(
         evar('id'),
-        tforall('t', fun(tvar('t'), tvar('t')))
+        tforall(t, fun(t, t))
       ),
       evar('id'),
       eunit,
@@ -95,6 +94,8 @@ var eid = eanno(abs('x', evar('x')), tforall('t', fun(tvar('t'), tvar('t'))));
 
   evar('map'),
   app(evar('map'), evar('inc')),
+  app(evar('map'), evar('inc'), app(evar('singleton'), evar('one'))),
+  app(evar('map'), evar('inc'), app(evar('pair'), evar('True'), evar('one'))),
 
   evar('pair'),
   app(evar('pair'), evar('one')),
@@ -104,7 +105,7 @@ var eid = eanno(abs('x', evar('x')), tforall('t', fun(tvar('t'), tvar('t'))));
     abs('id',
       app(evar('pair'),
         app(evar('id'), evar('one')), app(evar('id'), evar('True')))),
-        fun(tforall('t', fun(tvar('t'), tvar('t'))), tapps(Pair, Int, Bool))
+        fun(tforall(t, fun(t, t)), tapps(Pair, Int, Bool))
       ), eid),
 
   eif(evar('True'), evar('False'), evar('True')),
