@@ -1,4 +1,5 @@
 # bidirectional.js
-Javascript implementation of "Complete and Easy Bidirectional Type Checking for Higher-Rank Polymorphism"
+Javascript and Typescript implementation of "Complete and Easy Bidirectional Type Checking for Higher-Rank Polymorphism"
 
-This is a direct translation of https://github.com/ollef/Bidirectional
+This is an almost direct translation of https://github.com/ollef/Bidirectional
+
