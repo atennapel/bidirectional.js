@@ -1,3 +1,5 @@
+WIP!
+
 This directory contains experiments in extending the basic type system of
 "Complete and Easy Bidirectional Type Checking for Higher-Rank Polymorphism".
 
@@ -6,3 +8,4 @@ This directory contains experiments in extending the basic type system of
 * TApp for type applications (List Int, forall t . List t)
 * If expressions
 * Fix expression for recursion
+
