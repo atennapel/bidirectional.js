@@ -1,0 +1,17 @@
+{
+  "name": "ts-contextual-hkt",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "index": "node build/src/index.js",
+    "buildindex": "npm run build && npm run index"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^10.3.3",
+    "typescript": "^2.2.2"
+  }
+}
