@@ -208,11 +208,19 @@ const synthT = (e: Term): Contextual<Type> =>
     Var: e =>
       findVar(e.name),
     Abs: e =>
-      bind(freshVar(e.name), x =>
-      bind(freshExs([e.name, e.name]), ([a, b]) =>
-      then(add([cmarker(a), cex(a), cex(b), cvar(x, tex(a))]),
-      then(checkT(openAbs(e, vr(x)), tex(b)),
-      generalize(a, tfun(tex(a), tex(b))))))),
+      e.type?
+        then(typeWF(e.type),
+        bind(freshVar(e.name), x =>
+        bind(freshEx(e.name), b =>
+        then(add([cmarker(b), cex(b), cvar(x, e.type as Type)]),
+        then(checkT(openAbs(e, vr(x)), tex(b)),
+        generalize(b, tfun(e.type as Type, tex(b)))))))):
+
+        bind(freshVar(e.name), x =>
+        bind(freshExs([e.name, e.name]), ([a, b]) =>
+        then(add([cmarker(a), cex(a), cex(b), cvar(x, tex(a))]),
+        then(checkT(openAbs(e, vr(x)), tex(b)),
+        generalize(a, tfun(tex(a), tex(b))))))),
     App: e =>
       bind(synthT(e.left), ft =>
       bind(apply(ft), ft =>
@@ -232,7 +240,7 @@ const checkT = (e: Term, t: Type): Contextual<true> =>
       then(checkT(e, openForall(t, tvar(x))),
       then(drop(withName(isCTVar, x)),
       ok)))),
-    TFun: t => !isAbs(e)? checksynthT(e, t):
+    TFun: t => !isAbs(e) || e.type? checksynthT(e, t):
       bind(freshVar(e.name), x =>
       then(add([cvar(x, t.left)]),
       then(checkT(openAbs(e, vr(x)), t.right),

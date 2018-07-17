@@ -16,12 +16,13 @@ const ABS = 'Abs';
 export interface Abs {
   tag: typeof ABS,
   name: Name;
+  type: Type | null;
   body: Term;
 }
 export const isAbs = (term: Term): term is Abs => term.tag === ABS;
-export const abs = (name: Name, body: Term): Abs => ({ tag: ABS, name, body });
-export const abss = (ns: Name[], body: Term): Term =>
-  ns.reduceRight((t, n) => abs(n, t), body);
+export const abs = (name: Name, type: Type | null, body: Term): Abs => ({ tag: ABS, name, type, body });
+export const abss = (ns: (Name | [Name, Type | null])[], body: Term): Term =>
+  ns.reduceRight((t, n) => Array.isArray(n)? abs(n[0], n[1], t): abs(n, null, t), body);
 
 const APP = 'App';
 export interface App {
@@ -42,10 +43,10 @@ export interface Anno {
 export const isAnno = (term: Term): term is Anno => term.tag === ANNO;
 export const anno = (term: Term, type: Type): Anno => ({ tag: ANNO, term, type });
 
-export const flattenAbs = (t: Abs): { names: Name[], body: Term } => {
-  const names: Name[] = [];
+export const flattenAbs = (t: Abs): { names: [Name, Type | null][], body: Term } => {
+  const names: [Name, Type | null][] = [];
   let body: Term = t;
-  while(isAbs(body)) { names.push(body.name); body = body.body }
+  while(isAbs(body)) { names.push([body.name, body.type]); body = body.body }
   return { names, body };
 };
 export const flattenApp = (t: App): Term[] => {
@@ -62,7 +63,7 @@ export const showTerm = (t: Term): string => {
   if(isVar(t)) return showName(t.name);
   if(isAbs(t)) {
     const f = flattenAbs(t);
-    return `\\${f.names.map(showName).join(' ')} -> ${isAnno(f.body)? `(${showTerm(f.body)})`: showTerm(f.body)}`;
+    return `\\${f.names.map(([n, t]) => t? `(${showName(n)} : ${showType(t)})`: showName(n)).join(' ')} -> ${isAnno(f.body)? `(${showTerm(f.body)})`: showTerm(f.body)}`;
   }
   if(isApp(t)) return flattenApp(t).map(showWrap).join(' ');
   if(isAnno(t)) return `${showTerm(t.term)} : ${showType(t.type)}`;
@@ -71,7 +72,7 @@ export const showTerm = (t: Term): string => {
 
 export const substVar = (x: Name, s: Term, t: Term): Term => {
   if(isVar(t)) return eqName(x, t.name)? s: t;
-  if(isAbs(t)) return eqName(x, t.name)? t: abs(t.name, substVar(x, s, t.body));
+  if(isAbs(t)) return eqName(x, t.name)? t: abs(t.name, t.type, substVar(x, s, t.body));
   if(isApp(t)) return app(substVar(x, s, t.left), substVar(x, s, t.right));
   if(isAnno(t)) return anno(substVar(x, s, t.term), t.type);
   return impossible('substTVar');

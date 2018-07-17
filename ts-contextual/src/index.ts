@@ -42,10 +42,7 @@ const ctx: Entry[] = [
   cvar(str('s'), tfuns([tvar(str('Bool')), tvar(str('Bool'))])),
 ];
 
-const tm = apps([
-  anno(abss([x], vr(x)), tfuns([tvar(str('Bool')), tvar(str('Bool'))])),
-  vr(str('true'))
-]);
+const tm = abss([[x, tvar(str('Bool'))]], vr(x));
 console.log(showTerm(tm));
 try {
   const res = time(() => infer(ctx, tm));
