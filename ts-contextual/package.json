@@ -6,8 +6,7 @@
   "scripts": {
     "build": "tsc",
     "index": "node build/src/index.js",
-    "buildindex": "npm run build && npm run index",
-    "bundle": "npm run build && browserify build/src/web.js -o bundle.js"
+    "buildindex": "npm run build && npm run index"
   },
   "author": "",
   "license": "ISC",

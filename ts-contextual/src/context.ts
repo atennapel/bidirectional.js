@@ -1,5 +1,5 @@
-import { Name, showName, eqName, fresh } from './names';
-import { Type, showType, isTVar, isTEx, isTFun, isTForall, tforall, tfun } from './types';
+import { Name, showName, eqName, fresh, freshAll } from './names';
+import { Type, showType, isTVar, isTEx, isTFun, isTForall, tforall, tfun, TVar } from './types';
 import { impossible } from './util';
 import { isRegExp } from 'util';
 
@@ -69,6 +69,17 @@ export const contextApply = (c: Context, t: Type): Type => {
   return impossible('contextApply');
 };
 
+export const contextUnsolved = (c: Context): Name[] =>
+  c.filter(e => isCEx(e) && !e.type).map(e => e.name);
+
+export const isComplete = (c: Context): boolean => {
+  for(let i = c.length - 1; i >= 0; i--) {
+    const e = c[i];
+    if(isCEx(e) && !e.type) return false;
+  }
+  return true;
+};
+
 // contextual monad
 export type Contextual<T> = (ctx: Context) => { ctx: Context, val: T | TypeError };
 
@@ -101,20 +112,23 @@ export const not = <T>(c: Contextual<T>, msg: string): Contextual<true> => ctx =
   return r.val instanceof TypeError? ok(r.ctx): err<true>(msg)(r.ctx);
 };
 export const check = (c: boolean, msg: string): Contextual<true> =>
-  not(pure(c), msg);
+  c? ok: err<true>(msg);
 
 export const orElse = <T>(a: Contextual<T>, b: () => Contextual<T>): Contextual<T> => ctx => {
   const r = a(ctx);
   return r.val instanceof TypeError? b()(ctx): r;
 };
 
-export const runContextual = <T>(a: Contextual<T>, ctx: Context): T => {
+export const runContextual = <T>(ctx: Context, a: Contextual<T>): T => {
   const r = a(ctx);
   if(r.val instanceof TypeError) throw r.val;
   return r.val;
 };
 
 // methods
+export const checkComplete: Contextual<true> =
+  bind(get, ctx => check(isComplete(ctx), `context incomplete: ${showContext(ctx)}`));
+
 export const add = (suffix: Context): Contextual<true> =>
   modify(ctx => ctx.concat(suffix));
 export const pop: Contextual<Entry> =
@@ -134,38 +148,38 @@ export const withContext = <T>(c: Context, d: Contextual<T>): Contextual<T> =>
   then(put(ctx),
   pure(v)))));
 
-export const find = <T>(fn: (entry: Entry, i: number) => T | null, msg: (ctx: Context) => string): Contextual<T> =>
+export const find = <T>(fn: (entry: Entry, i: number) => T | false, msg: (ctx: Context) => string): Contextual<T> =>
   bind(get, ctx => {
     for(let i = ctx.length - 1; i >= 0; i--) {
       const e = fn(ctx[i], i);
-      if(e !== null) return pure(e);
+      if(e !== false) return pure(e);
     }
     return err(msg(ctx));
   });
 
 export const findVar = (name: Name): Contextual<Type> =>
   find(
-    e => isCVar(e) && eqName(name, e.name)? e.type: null,
+    e => isCVar(e) && eqName(name, e.name)? e.type: false,
     ctx => `var ${showName(name)} not found in ${showContext(ctx)}`
   );
 export const findTVar = (name: Name): Contextual<true> =>
   find(
-    e => isCTVar(e) && eqName(name, e.name)? true: null,
+    e => isCTVar(e) && eqName(name, e.name)? true: false,
     ctx => `tvar ${showName(name)} not found in ${showContext(ctx)}`
-  );
-export const findEx = (name: Name): Contextual<Type | null> =>
-  find(
-    e => isCEx(e) && eqName(name, e.name)? e.type: null,
-    ctx => `ex ^${showName(name)} not found in ${showContext(ctx)}`
   );
 export const findMarker = (name: Name): Contextual<true> =>
   find(
-    e => isCMarker(e) && eqName(name, e.name)? true: null,
+    e => isCMarker(e) && eqName(name, e.name)? true: false,
     ctx => `marker |>${showName(name)} not found in ${showContext(ctx)}`
+  );
+export const findEx = (name: Name): Contextual<Type | null> =>
+  find(
+    e => isCEx(e) && eqName(name, e.name)? e.type: false,
+    ctx => `ex ^${showName(name)} not found in ${showContext(ctx)}`
   );
 
 export const findIndex = (fn: (e: Entry) => boolean): Contextual<number> =>
-  find((e, i) => fn(e)? i: null, ctx => `findIndex failed, element not found`)
+  find((e, i) => fn(e)? i: false, ctx => `findIndex failed, element not found`)
 export const drop = (fn: (e: Entry) => boolean): Contextual<Context> =>
   bind(findIndex(fn), i =>
   bind(get, ctx => {
@@ -192,9 +206,18 @@ export const tvars: Contextual<Name[]> =
 export const exs: Contextual<Name[]> =
   bind(get, ctx =>
   pure(ctx.filter(e => isCEx(e)).map(e => e.name)));
+export const unsolved: Contextual<Name[]> =
+  bind(get, ctx =>
+  pure(ctx.filter(e => isCEx(e) && !e.type).map(e => e.name)));
 
 export const freshIn = (c: Contextual<Name[]>, name: Name): Contextual<Name> =>
   bind(c, ns => pure(fresh(ns, name)));
+export const freshAllIn = (c: Contextual<Name[]>, names: Name[]): Contextual<Name[]> =>
+  bind(c, ns => pure(freshAll(ns, names)));
 export const freshVar = (name: Name): Contextual<Name> => freshIn(vars, name);
 export const freshTVar = (name: Name): Contextual<Name> => freshIn(tvars, name);
 export const freshEx = (name: Name): Contextual<Name> => freshIn(exs, name);
+export const freshExs = (ns: Name[]): Contextual<Name[]> => freshAllIn(exs, ns);
+
+export const log = (msg: (c: Context) => string): Contextual<true> =>
+  bind(get, ctx => { console.log(msg(ctx)); return ok });

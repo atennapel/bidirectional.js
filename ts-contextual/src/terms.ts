@@ -4,7 +4,7 @@ import { impossible } from './util';
 
 export type Term = Var | Abs | App | Anno;
 
-const VAR = 'VAR';
+const VAR = 'Var';
 export interface Var {
   tag: typeof VAR,
   name: Name;
@@ -12,7 +12,7 @@ export interface Var {
 export const isVar = (term: Term): term is Var => term.tag === VAR;
 export const vr = (name: Name): Var => ({ tag: VAR, name });
 
-const ABS = 'ABS';
+const ABS = 'Abs';
 export interface Abs {
   tag: typeof ABS,
   name: Name;
@@ -23,7 +23,7 @@ export const abs = (name: Name, body: Term): Abs => ({ tag: ABS, name, body });
 export const abss = (ns: Name[], body: Term): Term =>
   ns.reduceRight((t, n) => abs(n, t), body);
 
-const APP = 'APP';
+const APP = 'App';
 export interface App {
   tag: typeof APP,
   left: Term;
@@ -33,7 +33,7 @@ export const isApp = (term: Term): term is App => term.tag === APP;
 export const app = (left: Term, right: Term): App => ({ tag: APP, left, right });
 export const apps = (ts: Term[]): Term => ts.reduce(app);
 
-const ANNO = 'ANNO';
+const ANNO = 'Anno';
 export interface Anno {
   tag: typeof ANNO,
   term: Term;
@@ -78,3 +78,18 @@ export const substVar = (x: Name, s: Term, t: Term): Term => {
 };
 export const openAbs = (t: Abs, s: Term): Term =>
   substVar(t.name, s, t.body);
+
+export type CaseTerm<T> = {
+  [VAR]?: (val: Var) => T;
+  [ABS]?: (val: Abs) => T;
+  [APP]?: (val: App) => T;
+  [ANNO]?: (val: Anno) => T;
+  _?: (val: Term) => T;
+};
+export const caseTerm = <R>(o: CaseTerm<R>) => (val: Term): R => {
+  if(o[val.tag]) return (o[val.tag] as any)(val) as R;
+  if(o._) return o._(val);
+  throw new Error(`caseTerm failed on ${val.tag}`);
+};
+export const caseTermOf = <R>(t: Term, o: CaseTerm<R>): R =>
+  caseTerm(o)(t);

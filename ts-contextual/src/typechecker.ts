@@ -1,5 +1,9 @@
 import {
-  Name, showName, eqName,
+  Name,
+  showName,
+  eqName,
+  str,
+  containsName,
 } from './names';
 import {
   Type,
@@ -11,10 +15,16 @@ import {
   tex,
   containsTEx,
   substTVar,
+  substTEx,
   showType,
   openForall,
   isMono,
   tfun,
+  tforalls,
+  freeTEx,
+
+  caseType,
+  caseTypeOf,
 } from './types'
 import {
   Term,
@@ -23,6 +33,10 @@ import {
   isAnno,
   isApp,
   showTerm,
+  openAbs,
+  vr,
+  caseTerm,
+  caseTermOf,
 } from './terms';
 import {
   Entry,
@@ -45,6 +59,7 @@ import {
   ctvar,
   showContext,
   freshEx,
+  freshExs,
   drop,
   isCMarker,
   isCTVar,
@@ -59,22 +74,27 @@ import {
   findVar,
   runContextual,
   freshVar,
+  cvar,
+  isCVar,
+  contextUnsolved,
+  checkComplete,
+  log,
 } from './context'
 import { impossible } from './util';
 
-const typeWF = (type: Type): Contextual<true> => {
-  if(isTVar(type)) return not(findTVar(type.name), `duplicate tvar ${showName(type.name)}`);
-  if(isTEx(type)) return not(findEx(type.name), `duplicate tex ^${showName(type.name)}`)
-  if(isTFun(type)) return then(typeWF(type.left), typeWF(type.right));
-  if(isTForall(type)) return (
-    bind(freshTVar(type.name), x =>
-    then(add([ctvar(x)]),
-    typeWF(openForall(type, tvar(x)))))
-  );
-  return impossible('typeWF');
-};
+const typeWF: (type: Type) => Contextual<true> = 
+  caseType({
+    TVar: type => findTVar(type.name),
+    TEx: type => then(findEx(type.name), ok),
+    TFun: type => then(typeWF(type.left), typeWF(type.right)),
+    TForall: type =>
+      bind(freshTVar(type.name), x =>
+      then(add([ctvar(x)]),
+      typeWF(openForall(type, tvar(x)))))
+  });
 
 const subtype = (a: Type, b: Type): Contextual<true> =>
+  then(log(ctx => `subtype ${showType(a)} <: ${showType(b)} in ${showContext(ctx)}`),
   then(typeWF(a), bind(typeWF(b), () => {
     if(((isTVar(a) && isTVar(b)) ||
         (isTEx(a) && isTEx(b))) &&
@@ -109,116 +129,153 @@ const subtype = (a: Type, b: Type): Contextual<true> =>
     );
     return bind(get, ctx =>
       err<true>(`subtype failed ${showType(a)} <: ${showType(b)} in ${showContext(ctx)}`));
-  }));
+  })));
 
 const solve = (a: Name, b: Type): Contextual<true> =>
+  then(log(ctx => `solve ${showName(a)} := ${showType(b)} in ${showContext(ctx)}`),
   !isMono(b)? err<true>(`polymorphic type in solve ${showName(a)} := ${showType(b)}`):
     bind(drop(withName(isCEx, a)), right =>
     then(typeWF(b),
-    add([cex(a, b) as Entry].concat(right))));
+    add([cex(a, b) as Entry].concat(right)))));
 
-const instL = (a: Name, b: Type): Contextual<true> => {
-  if(isTEx(b)) return bind(isOrdered(a, b.name), o => o? solve(b.name, tex(a)): solve(a, b));
-  return orElse(solve(a, b), () => {
-    if(isTFun(b)) return (
-      bind(freshEx(a), a1 =>
-      bind(freshEx(a), a2 =>
-      then(replace(withName(isCEx, a), [
-        cex(a2), cex(a1), cex(a, tfun(tex(a1), tex(a2)))
-      ]),
-      then(instR(b.left, a1),
-      bind(apply(b.right), t =>
-      instL(a2, t))))))
-    );
-    if(isTForall(b)) return (
-      bind(freshTVar(b.name), x =>
+const instL = (a: Name, b: Type): Contextual<true> =>
+  then(log(ctx => `instR ${showName(a)} := ${showType(b)} in ${showContext(ctx)}`),
+  isTEx(b)? bind(isOrdered(a, b.name), o => o? solve(b.name, tex(a)): solve(a, b)):
+    orElse(solve(a, b), () =>
+      caseTypeOf(b, {
+        TFun: b =>
+          bind(freshExs([a, a]), ([a1, a2]) =>
+          then(replace(withName(isCEx, a), [
+            cex(a2), cex(a1), cex(a, tfun(tex(a1), tex(a2)))
+          ]),
+          then(instR(b.left, a1),
+          bind(apply(b.right), t =>
+          instL(a2, t))))),
+        TForall: b =>
+          bind(freshTVar(b.name), x =>
+          then(add([ctvar(x)]),
+          then(instL(a, openForall(b, tvar(x))),
+          then(drop(withName(isCTVar, x)),
+          ok)))),
+        _: b => bind(get, ctx =>
+          err<true>(`instL failed: ${showName(a)} := ${showType(b)} in ${showContext(ctx)}`))
+      })));
+
+const instR = (a: Type, b: Name): Contextual<true> =>
+  then(log(ctx => `instR ${showType(a)} =: ${showName(b)} in ${showContext(ctx)}`),
+  isTEx(a)? bind(isOrdered(b, a.name), o => o? solve(a.name, tex(b)): solve(b, a)):
+    orElse(solve(b, a), () =>
+      caseTypeOf(a, {
+        TFun: a =>
+          bind(freshExs([b, b]), ([b1, b2]) =>
+          then(replace(withName(isCEx, b), [
+            cex(b2), cex(b1), cex(b, tfun(tex(b1), tex(b2)))
+          ]),
+          then(instL(b1, a.left),
+          bind(apply(a.right), t =>
+          instR(t, b2))))),
+        TForall: a =>
+          bind(freshEx(a.name), x =>
+          then(add([cmarker(x), cex(x)]),
+          then(instR(openForall(a, tex(x)), b),
+          then(drop(withName(isCMarker, x)),
+          ok)))),
+        _: a => bind(get, ctx =>
+          err<true>(`instR failed: ${showType(a)} =: ${showName(b)} in ${showContext(ctx)}`)),
+      })));
+
+const orderedUnsolved = (ctx: Context, t: Type): Name[] => {
+  const u = contextUnsolved(ctx);
+  const r: Name[] = [];
+  const es = freeTEx(t);
+  for(let i = 0; i < es.length; i++) {
+    const n = es[i];
+    if(containsName(u, n) && !containsName(r, n))
+      r.push(n);
+  }
+  return r;
+};
+
+const generalize = (x: Name, t: Type): Contextual<Type> =>
+  bind(apply(t), t =>
+  bind(drop(withName(isCMarker, x)), right =>
+  bind(pure(orderedUnsolved(right, t)), u =>
+  pure(tforalls(u, u.reduce((t, n) => substTEx(n, tvar(n), t), t))))));
+
+const synthT = (e: Term): Contextual<Type> =>
+  then(log(ctx => `synthT ${showTerm(e)} in ${showContext(ctx)}`),
+  caseTermOf(e, {
+    Var: e =>
+      findVar(e.name),
+    Abs: e =>
+      bind(freshVar(e.name), x =>
+      bind(freshExs([e.name, e.name]), ([a, b]) =>
+      then(add([cmarker(a), cex(a), cex(b), cvar(x, tex(a))]),
+      then(checkT(openAbs(e, vr(x)), tex(b)),
+      generalize(a, tfun(tex(a), tex(b))))))),
+    App: e =>
+      bind(synthT(e.left), ft =>
+      bind(apply(ft), ft =>
+      synthappT(ft, e.right))),
+    Anno: e =>
+      then(typeWF(e.type),
+      then(checkT(e.term, e.type),
+      pure(e.type))),
+  }));
+
+const checkT = (e: Term, t: Type): Contextual<true> =>
+  then(log(ctx => `checkT ${showTerm(e)} : ${showType(t)} in ${showContext(ctx)}`),
+  caseTypeOf(t, {
+    TForall: t =>
+      bind(freshTVar(t.name), x =>
       then(add([ctvar(x)]),
-      then(instL(a, openForall(b, tvar(x))),
+      then(checkT(e, openForall(t, tvar(x))),
       then(drop(withName(isCTVar, x)),
-      ok))))
-    );
-    return bind(get, ctx =>
-      err<true>(`instL failed: ${showName(a)} := ${showType(b)} in ${showContext(ctx)}`));
-  });
-};
-const instR = (a: Type, b: Name): Contextual<true> => {
-  if(isTEx(a)) return bind(isOrdered(b, a.name), o => o? solve(a.name, tex(b)): solve(b, a));
-  return orElse(solve(b, a), () => {
-    if(isTFun(a)) return (
-      bind(freshEx(b), b1 =>
-      bind(freshEx(b), b2 =>
-      then(replace(withName(isCEx, b), [
-        cex(b2), cex(b1), cex(b, tfun(tex(b1), tex(b2)))
+      ok)))),
+    TFun: t => !isAbs(e)? checksynthT(e, t):
+      bind(freshVar(e.name), x =>
+      then(add([cvar(x, t.left)]),
+      then(checkT(openAbs(e, vr(x)), t.right),
+      then(drop(withName(isCVar, x)),
+      ok)))),
+    _: t => checksynthT(e, t),
+  }));
+const checksynthT = (e: Term, t: Type): Contextual<true> =>
+  then(log(ctx => `checksynthT ${showTerm(e)} : ${showType(t)} in ${showContext(ctx)}`),
+  bind(synthT(e), te =>
+  bind(applies([te, t]), ([te, t]) =>
+  subtype(te, t))));
+
+const synthappT = (t: Type, e: Term): Contextual<Type> =>
+  then(log(ctx => `synthappT ${showType(t)} and ${showTerm(e)} in ${showContext(ctx)}`),
+  caseTypeOf(t, {
+    TForall: t =>
+      bind(freshEx(t.name), x =>
+      then(add([cex(x)]),
+      synthappT(openForall(t, tex(x)), e))),
+    TEx: t =>
+      then(findEx(t.name),
+      bind(freshExs([t.name, t.name]), ([a1, a2]) =>
+      then(replace(withName(isCEx, t.name), [
+        cex(a2), cex(a1), cex(t.name, tfun(tex(a1), tex(a2)))
       ]),
-      then(instL(b1, a.left),
-      bind(apply(a.right), t =>
-      instR(t, b2))))))
-    );
-    if(isTForall(a)) return (
-      bind(freshEx(a.name), x =>
-      then(add([cmarker(x), cex(x)]),
-      then(instR(openForall(a, tex(x)), b),
-      then(drop(withName(isCMarker, x)),
-      ok))))
-    );
-    return bind(get, ctx =>
-      err<true>(`instR failed: ${showType(a)} =: ${showName(b)} in ${showContext(ctx)}`));
-  });
-};
+      then(checkT(e, tex(a1)),
+      pure(tex(a2)))))),
+    TFun: t =>
+      then(checkT(e, t.left), pure(t.right)),
+    _: t => err(`cannot synthapp ${t} with ${e}`),
+  }));
 
-const synthT = (e: Term): Contextual<Type> => {
-  if(isVar(e)) return findVar(e.name);
-  if(isAbs(e))
-  if(isApp(e)) return (
-    bind(synthT(e.left), ft =>
-    bind(apply(ft), ft =>
-    synthappT(ft, e.right)))
-  );
-  if(isAnno(e)) return (
-    then(typeWF(e.type),
-    then(checkT(e.term, e.type),
-    pure(e.type)))
-  );
-  return err(`cannot infer ${showTerm(e)}`);
-};
-const checkT = (e: Term, t: Type): Contextual<true> => {
-  if(isTForall(t)) return (
-    bind(freshTVar(t.name), x =>
-    then(add([ctvar(x)]),
-    then(checkT(e, openForall(t, tvar(x))),
-    then(drop(withName(isCTVar, x)),
-    ok))))
-  );
-  if(isAbs(e) && isTFun(t)) return (
-    bind(freshVar(e.name), x =>
-    then(add([]),
-    then())
-  );
-  return (
-    bind(synthT(e), te =>
-    bind(applies([te, t]), ([te, t]) =>
-    subtype(te, t)))
-  );
-};
-const synthappT = (t: Type, e: Term): Contextual<Type> => {
-  if(isTForall(t)) return (
-    bind(freshEx(t.name), x =>
-    then(add([cex(x)]),
-    synthappT(openForall(t, tex(x)), e)))
-  );
-  if(isTEx(t)) return (
-    then(findEx(t.name),
-    bind(freshEx(t.name), a1 =>
-    bind(freshEx(t.name), a2 =>
-    then(replace(withName(isCEx, t.name), [
-      cex(a2), cex(a1), cex(t.name, tfun(tex(a1), tex(a2)))
-    ]),
-    then(checkT(e, tex(a1)),
-    pure(tex(a2)))))))
-  );
-  if(isTFun(t)) return then(checkT(e, t.left), pure(t.right));
-  return err(`cannot synthapp ${t} with ${e}`);
-};
+const synth = (e: Term): Contextual<Type> =>
+  bind(freshEx(str('m')), m =>
+  then(add([cmarker(m)]),
+  bind(synthT(e), t =>
+  bind(generalize(m, t), t =>
+  then(checkComplete,
+  pure(t))))));
 
-const infer = (ctx: Context, e: Term): Type =>
-  runContextual(bind(synthT(e), apply), ctx);
+export const infer = (ctx: Context, e: Term): { ctx: Context, type: Type } =>
+  runContextual(ctx,
+    bind(synth(e), type =>
+    bind(get, ctx =>
+    pure({ ctx, type }))));

@@ -3,7 +3,7 @@ import { impossible } from './util';
 
 export type Type = TVar | TEx | TFun | TForall;
 
-const TVAR = 'TVAR';
+const TVAR = 'TVar';
 export interface TVar {
   tag: typeof TVAR,
   name: Name;
@@ -11,7 +11,7 @@ export interface TVar {
 export const isTVar = (type: Type): type is TVar => type.tag === TVAR;
 export const tvar = (name: Name): TVar => ({ tag: TVAR, name });
 
-const TEX = 'TEX';
+const TEX = 'TEx';
 export interface TEx {
   tag: typeof TEX,
   name: Name;
@@ -19,7 +19,7 @@ export interface TEx {
 export const isTEx = (type: Type): type is TEx => type.tag === TEX;
 export const tex = (name: Name): TEx => ({ tag: TEX, name });
 
-const TFUN = 'TFUN';
+const TFUN = 'TFun';
 export interface TFun {
   tag: typeof TFUN,
   left: Type;
@@ -29,7 +29,7 @@ export const isTFun = (type: Type): type is TFun => type.tag === TFUN;
 export const tfun = (left: Type, right: Type): TFun => ({ tag: TFUN, left, right });
 export const tfuns = (ts: Type[]): Type => ts.reduceRight((a, b) => tfun(b, a));
 
-const TFORALL = 'TFORALL';
+const TFORALL = 'TForall';
 export interface TForall {
   tag: typeof TFORALL,
   name: Name;
@@ -82,6 +82,13 @@ export const containsTEx = (t: Type, n: Name): boolean => {
   return impossible('containsTEx');
 };
 
+export const substTEx = (x: Name, s: Type, t: Type): Type => {
+  if(isTVar(t)) return t;
+  if(isTEx(t)) return eqName(x, t.name)? s: t;
+  if(isTFun(t)) return tfun(substTEx(x, s, t.left), substTEx(x, s, t.right));
+  if(isTForall(t)) return tforall(t.name, substTEx(x, s, t.type));
+  return impossible('substTEx');
+};
 export const substTVar = (x: Name, s: Type, t: Type): Type => {
   if(isTVar(t)) return eqName(x, t.name)? s: t;
   if(isTEx(t)) return t;
@@ -99,3 +106,18 @@ export const isMono = (t: Type): boolean => {
   if(isTForall(t)) return false;
   return impossible('isMono');
 };
+
+export type CaseType<T> = {
+  [TVAR]?: (val: TVar) => T;
+  [TEX]?: (val: TEx) => T;
+  [TFUN]?: (val: TFun) => T;
+  [TFORALL]?: (val: TForall) => T;
+  _?: (val: Type) => T;
+};
+export const caseType = <R>(o: CaseType<R>) => (val: Type): R => {
+  if(o[val.tag]) return (o[val.tag] as any)(val) as R;
+  if(o._) return o._(val);
+  throw new Error(`caseType failed on ${val.tag}`);
+};
+export const caseTypeOf = <R>(t: Type, o: CaseType<R>): R =>
+  caseType(o)(t);

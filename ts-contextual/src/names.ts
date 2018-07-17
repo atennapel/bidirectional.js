@@ -58,3 +58,9 @@ export const freshAll = (ns: Name[], xs: Name[]): Name[] => {
   }
   return r;
 }
+
+export const containsName = (ns: Name[], n: Name): boolean => {
+  for(let i = 0; i < ns.length; i++)
+    if(eqName(n, ns[i])) return true;
+  return false;
+};
