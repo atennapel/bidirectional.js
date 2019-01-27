@@ -1,0 +1,17 @@
+{
+  "name": "ts-mutable",
+  "version": "1.0.0",
+  "description": "An implementation of \"Complete and Easy...\" in TypeScript using mutable global variables and exceptions.",
+  "main": "index.js",
+  "scripts": {
+    "test": "node build/src/test.js",
+    "build": "tsc",
+    "buildtest": "npm run build && npm test"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^10.12.18",
+    "typescript": "^3.2.4"
+  }
+}
