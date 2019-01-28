@@ -17,15 +17,11 @@ export const isCTVar = <N>(elem: Elem<N>): elem is CTVar<N> => elem.tag === 'CTV
 export interface CTMeta<N> {
   readonly tag: 'CTMeta';
   readonly name: N;
-  type: Type<N> | null;
+  readonly type: Type<N> | null;
 }
 export const CTMeta = <N>(name: N, type: Type<N> | null = null): CTMeta<N> =>
   ({ tag: 'CTMeta', name, type });
 export const isCTMeta = <N>(elem: Elem<N>): elem is CTMeta<N> => elem.tag === 'CTMeta';
-export const solve = <N>(elem: CTMeta<N>, type: Type<N>): CTMeta<N> => {
-  elem.type = type;
-  return elem;
-};
 
 export interface CVar<N> {
   readonly tag: 'CVar';

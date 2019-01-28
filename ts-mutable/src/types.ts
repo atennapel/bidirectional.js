@@ -45,3 +45,21 @@ export const showType = <N>(type: Type<N>): string => {
   if (isTForall(type)) return `(forall ${type.name}. ${showType(type.type)})`;
   return impossible('showType');
 };
+
+export const substTVar = <N>(type: Type<N>, x: N, s: Type<N>): Type<N> => {
+  if (isTVar(type)) return type.name === x ? s : type;
+  if (isTMeta(type)) return type;
+  if (isTFun(type)) {
+    const left = substTVar(type.left, x, s);
+    const right = substTVar(type.right, x, s);
+    return type.left === left && type.right === right ? type : TFun(left, right);
+  }
+  if (isTForall(type)) {
+    if (type.name === x) return type;
+    const body = substTVar(type.type, x, s);
+    return type.type === body ? type : TForall(type.name, body);
+  }
+  return impossible('substTVar');
+};
+export const openTForall = <N>(forall: TForall<N>, s: Type<N>): Type<N> =>
+  substTVar(forall.type, forall.name, s);
