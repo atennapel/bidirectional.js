@@ -15,13 +15,13 @@ export class GName {
 export class GNameStore {
   
   constructor(
-    readonly map: { [key: string]: number } = {},
+    readonly map: Map<string, number> = new Map(),
   ) {}
 
-  fresh(name: string | GName): GName {
-    const n = typeof name === 'string' ? name : name.name;
-    if (!this.map[n]) this.map[n] = 0;
-    return new GName(n, this.map[n]++);
+  fresh(n: string): GName {
+    const i = this.map.get(n) || 0;
+    this.map.set(n, i + 1);
+    return new GName(n, i);
   }
 
 }

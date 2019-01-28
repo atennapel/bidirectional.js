@@ -1,47 +1,51 @@
 import { impossible } from "./util";
+import { Type, showType } from "./types";
 
-export type Elem
-  = CTVar
-  | CTMeta
-  | CVar
-  | CMarker;
+export type Elem<N>
+  = CTVar<N>
+  | CTMeta<N>
+  | CVar<N>
+  | CMarker<N>;
 
-export interface TVar<N> {
-  readonly tag: 'TVar';
+export interface CTVar<N> {
+  readonly tag: 'CTVar';
   readonly name: N;
 }
-export const TVar = <N>(name: N): TVar<N> => ({ tag: 'TVar', name });
-export const isTVar = <N>(type: Type<N>): type is TVar<N> => type.tag === 'TVar';
+export const CTVar = <N>(name: N): CTVar<N> => ({ tag: 'CTVar', name });
+export const isCTVar = <N>(elem: Elem<N>): elem is CTVar<N> => elem.tag === 'CTVar';
 
-export interface TMeta<N> {
-  readonly tag: 'TMeta';
+export interface CTMeta<N> {
+  readonly tag: 'CTMeta';
   readonly name: N;
+  type: Type<N> | null;
 }
-export const TMeta = <N>(name: N): TMeta<N> => ({ tag: 'TMeta', name });
-export const isTMeta = <N>(type: Type<N>): type is TMeta<N> => type.tag === 'TMeta';
+export const CTMeta = <N>(name: N, type: Type<N> | null = null): CTMeta<N> =>
+  ({ tag: 'CTMeta', name, type });
+export const isCTMeta = <N>(elem: Elem<N>): elem is CTMeta<N> => elem.tag === 'CTMeta';
+export const solve = <N>(elem: CTMeta<N>, type: Type<N>): CTMeta<N> => {
+  elem.type = type;
+  return elem;
+};
 
-export interface TFun<N> {
-  readonly tag: 'TFun';
-  readonly left: Type<N>;
-  readonly right: Type<N>;
-}
-export const TFun = <N>(left: Type<N>, right: Type<N>): TFun<N> =>
-  ({ tag: 'TFun', left, right });
-export const isTFun = <N>(type: Type<N>): type is TFun<N> => type.tag === 'TFun';
-
-export interface TForall<N> {
-  readonly tag: 'TForall';
+export interface CVar<N> {
+  readonly tag: 'CVar';
   readonly name: N;
   readonly type: Type<N>;
 }
-export const TForall = <N>(name: N, type: Type<N>): TForall<N> =>
-  ({ tag: 'TForall', name, type });
-export const isTForall = <N>(type: Type<N>): type is TForall<N> => type.tag === 'TForall';
+export const CVar = <N>(name: N, type: Type<N>): CVar<N> => ({ tag: 'CVar', name, type });
+export const isCVar = <N>(elem: Elem<N>): elem is CVar<N> => elem.tag === 'CVar';
 
-export const showType = <N>(type: Type<N>): string => {
-  if (isTVar(type)) return `${type.name}`;
-  if (isTMeta(type)) return `?${type.name}`;
-  if (isTFun(type)) return `(${showType(type.left)} -> ${showType(type.right)}`;
-  if (isTForall(type)) return `(forall ${type.name}. ${showType(type.type)})`;
-  return impossible('showType');
+export interface CMarker<N> {
+  readonly tag: 'CMarker';
+  readonly name: N;
+}
+export const CMarker = <N>(name: N): CMarker<N> => ({ tag: 'CMarker', name });
+export const isCMarker = <N>(elem: Elem<N>): elem is CMarker<N> => elem.tag === 'CMarker';
+
+export const showElem = <N>(elem: Elem<N>): string => {
+  if (isCTVar(elem)) return `${elem.name}`;
+  if (isCTMeta(elem)) return `?${elem.name}${elem.type ? ` = ${showType(elem.type)}` : ''}`;
+  if (isCVar(elem)) return `${elem.name} : ${showType(elem.type)}`;
+  if (isCMarker(elem)) return `|${elem.name}`;
+  return impossible('showElem');
 };
