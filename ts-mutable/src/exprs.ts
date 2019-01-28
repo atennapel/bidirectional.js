@@ -48,3 +48,24 @@ export const showExpr = <N>(expr: Expr<N>): string => {
   if (isAnno(expr)) return `(${showExpr(expr.expr)} ${showType(expr.type)})`;
   return impossible('showExpr');
 };
+
+export const substVar = <N>(expr: Expr<N>, v: N, s: Expr<N>): Expr<N> => {
+  if (isVar(expr)) return expr.name === v ? s : expr;
+  if (isApp(expr)) {
+    const left = substVar(expr.left, v, s);
+    const right = substVar(expr.right, v, s);
+    return expr.left === left && expr.right === right ? expr : App(left, right);
+  }
+  if (isAbs(expr)) {
+    if (expr.name === v) return expr;
+    const body = substVar(expr.expr, v, s);
+    return expr.expr === body ? expr : Abs(expr.name, body);
+  }
+  if (isAnno(expr)) {
+    const body = substVar(expr.expr, v, s);
+    return expr.expr === body ? expr : Anno(body, expr.type);
+  }
+  return impossible('substVar');
+};
+export const openAbs = <N>(a: Abs<N>, s: Expr<N>): Expr<N> =>
+  substVar(a.expr, a.name, s);

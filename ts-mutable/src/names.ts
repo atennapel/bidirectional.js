@@ -25,4 +25,8 @@ export class GNameStore {
     return new GName(n, i);
   }
 
+  reset() {
+    this.map.clear();
+  }
+
 }

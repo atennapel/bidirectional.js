@@ -41,7 +41,7 @@ export const isTForall = <N>(type: Type<N>): type is TForall<N> => type.tag === 
 export const showType = <N>(type: Type<N>): string => {
   if (isTVar(type)) return `${type.name}`;
   if (isTMeta(type)) return `?${type.name}`;
-  if (isTFun(type)) return `(${showType(type.left)} -> ${showType(type.right)}`;
+  if (isTFun(type)) return `(${showType(type.left)} -> ${showType(type.right)})`;
   if (isTForall(type)) return `(forall ${type.name}. ${showType(type.type)})`;
   return impossible('showType');
 };
@@ -63,3 +63,19 @@ export const substTVar = <N>(type: Type<N>, x: N, s: Type<N>): Type<N> => {
 };
 export const openTForall = <N>(forall: TForall<N>, s: Type<N>): Type<N> =>
   substTVar(forall.type, forall.name, s);
+
+export const containsTMeta = <N>(type: Type<N>, m: N): boolean => {
+  if (isTVar(type)) return false;
+  if (isTMeta(type)) return type.name === m;
+  if (isTFun(type)) return containsTMeta(type.left, m) || containsTMeta(type.right, m);
+  if (isTForall(type)) return containsTMeta(type.type, m);
+  return impossible('containsTMeta');
+};
+
+export const isMono = <N>(type: Type<N>): boolean => {
+  if (isTVar(type)) return true;
+  if (isTMeta(type)) return true;
+  if (isTFun(type)) return isMono(type.left) && isMono(type.right);
+  if (isTForall(type)) return false;
+  return impossible('isMono');
+};

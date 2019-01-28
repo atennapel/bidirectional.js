@@ -1,11 +1,11 @@
 import { GName } from "./names";
-import { Elem, showElem } from "./elems";
+import { Elem, showElem, ElemFromTag, CTMeta, CMarker } from "./elems";
 import { cloneMap } from "./util";
+import { namestore } from "./inferctx";
 
 type El = Elem<GName>;
 type ElType = El['tag'];
 type IxMap = { [key in ElType]: Map<GName, number> };
-type StackFrame = { type: ElType, name: GName, index: number | undefined };
 
 export class Context {
 
@@ -17,7 +17,7 @@ export class Context {
       CVar: new Map(),
       CMarker: new Map(),
     },
-    private readonly stack: StackFrame[] = [],
+    private readonly stack: GName[] = [],
   ) {}
 
   toString(): string {
@@ -59,24 +59,8 @@ export class Context {
   contains(ty: ElType, name: GName): boolean {
     return this.indexOf(ty, name) >= 0;
   }
-
-  enter(el: El): void {
-    this.stack.push({
-      type: el.tag,
-      name: el.name,
-      index: this.ix[el.tag].get(el.name),
-    });
-    this.add(el);
-  }
-  leave(): void {
-    if (this.stack.length > 0) {
-      const top = this.stack.pop() as StackFrame;
-      if (typeof top.index === 'undefined') {
-        this.ix[top.type].delete(top.name);
-      } else {
-        this.ix[top.type].set(top.name, top.index);
-      }
-    }
+  lookup<T extends ElType>(ty: T, name: GName): ElemFromTag<GName>[T] | null {
+    return this.ctx[this.indexOf(ty, name)] as ElemFromTag<GName>[T] | null;
   }
 
   pop(): El | null {
@@ -87,6 +71,60 @@ export class Context {
       if (i === j) this.ix[el.tag].delete(el.name);
     }
     return el;
+  }
+
+  split(ty: ElType, name: GName): El[] {
+    const i = this.indexOf(ty, name);
+    if (i < 0) return [];
+    const ret = this.ctx.splice(i);
+    for (let i = 0, l = ret.length; i < l; i++) {
+      const e = ret[i];
+      this.ix[e.tag].delete(e.name);
+    }
+    ret.shift();
+    return ret;
+  }
+
+  replace(ty: ElType, name: GName, es: El[]): Context {
+    const right = this.split(ty, name);
+    this.addAll(es);
+    this.addAll(right);
+    return this;
+  }
+
+  isComplete(): boolean {
+    const m = this.ix.CTMeta;
+    for (let k of m.keys()) {
+      const e = this.ctx[m.get(k) as number] as CTMeta<GName>;
+      if (!e.type) return false;
+    }
+    return true;
+  }
+
+  enter(el: El): GName {
+    const m = namestore.fresh('m');
+    this.add(CMarker(m));
+    this.add(el);
+    this.stack.push(m);
+    return m;
+  }
+  enterWith(els: El[]): GName {
+    const m = namestore.fresh('m');
+    this.add(CMarker(m));
+    this.addAll(els);
+    this.stack.push(m);
+    return m;
+  }
+  enterEmpty(): GName {
+    const m = namestore.fresh('m');
+    this.add(CMarker(m));
+    this.stack.push(m);
+    return m;
+  }
+  leave(): El[] {
+    const m = this.stack.pop();
+    if (!m) return [];
+    return this.split('CMarker', m);
   }
 
 }

@@ -6,6 +6,12 @@ export type Elem<N>
   | CTMeta<N>
   | CVar<N>
   | CMarker<N>;
+export type ElemFromTag<N> = {
+  CTVar: CTVar<N>;
+  CTMeta: CTMeta<N>;
+  CVar: CVar<N>;
+  CMarker: CMarker<N>;
+};
 
 export interface CTVar<N> {
   readonly tag: 'CTVar';
