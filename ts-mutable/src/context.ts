@@ -9,7 +9,6 @@ export class Context {
 
   constructor(
     private readonly ctx: El[] = [],
-    private readonly stack: GName[] = [],
   ) {}
 
   toString(): string {
@@ -18,8 +17,7 @@ export class Context {
 
   clone(): Context {
     const ctx = this.ctx.slice();
-    const stack = this.stack.slice();
-    return new Context(ctx, stack);
+    return new Context(ctx);
   }
 
   addAll(es: El[]): Context {
@@ -79,35 +77,16 @@ export class Context {
     return true;
   }
 
-  enter(el: El): GName {
+  enter(el?: El): GName {
     const m = namestore.fresh('m');
     this.add(CMarker(m));
-    this.add(el);
-    this.stack.push(m);
+    if (el) this.add(el);
     return m;
   }
-  enterWith(els: El[]): GName {
-    const m = namestore.fresh('m');
-    this.add(CMarker(m));
-    this.addAll(els);
-    this.stack.push(m);
-    return m;
-  }
-  enterEmpty(): GName {
-    const m = namestore.fresh('m');
-    this.add(CMarker(m));
-    this.stack.push(m);
-    return m;
-  }
-  leave(): void {
-    const m = this.stack.pop();
-    if (!m) return;
+  leave(m: GName): void {
     this.split('CMarker', m);
   }
-
-  leaveWithUnsolved(): GName[] {
-    const m = this.stack.pop();
-    if (!m) return [];
+  leaveWithUnsolved(m: GName): GName[] {
     const ret = this.split('CMarker', m);
     const ns = [];
     for (let i = 0, l = ret.length; i < l; i++) {

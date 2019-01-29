@@ -18,9 +18,9 @@ export const wfType = (type: Type<GName>): void => {
   if (isTFun(type)) { wfType(type.left); wfType(type.right); return }
   if (isTForall(type)) {
     const t = namestore.fresh(type.name);
-    context.enter(CTVar(t));
+    const m = context.enter(CTVar(t));
     wfType(openTForall(type, TVar(t)));
-    context.leave();
+    context.leave(m);
     return;
   }
   return impossible('wfType');

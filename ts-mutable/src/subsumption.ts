@@ -39,9 +39,9 @@ const instL = (x: TMeta<GName>, type: Type<GName>): void => {
     }
     if (isTForall(type)) {
       const y = namestore.fresh(type.name);
-      context.enter(CTVar(y));
+      const m = context.enter(CTVar(y));
       instL(x, openTForall(type, TVar(y)));
-      context.leave();
+      context.leave(m);
       return;
     }
     return infererr(`instL failed: ${showType(x)} := ${showType(type)}`);
@@ -74,9 +74,9 @@ const instR = (type: Type<GName>, x: TMeta<GName>): void => {
     }
     if (isTForall(type)) {
       const y = namestore.fresh(type.name);
-      context.enter(CTMeta(y));
+      const m = context.enter(CTMeta(y));
       instR(openTForall(type, TMeta(y)), x);
-      context.leave();
+      context.leave(m);
       return;
     }
     return infererr(`instR failed: ${showType(x)} := ${showType(type)}`);
@@ -94,16 +94,16 @@ export const subsume = (a: Type<GName>, b: Type<GName>): void => {
   }
   if (isTForall(a)) {
     const x = namestore.fresh(a.name);
-    context.enter(CTMeta(x));
+    const m = context.enter(CTMeta(x));
     subsume(openTForall(a, TMeta(x)), b);
-    context.leave();
+    context.leave(m);
     return;
   }
   if (isTForall(b)) {
     const x = namestore.fresh(b.name);
-    context.enter(CTVar(x));
+    const m = context.enter(CTVar(x));
     subsume(a, openTForall(b, TVar(x)));
-    context.leave();
+    context.leave(m);
     return;
   }
   if (isTMeta(a)) {

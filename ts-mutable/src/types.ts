@@ -94,3 +94,18 @@ export const substTMetas = <N>(type: Type<N>, m: Map<N, Type<N>>): Type<N> => {
   }
   return impossible('substTMetas');
 };
+
+export const unsolvedInType = <N>(unsolved: N[], type: Type<N>, ns: N[] = []): N[] => {
+  if (isTVar(type)) return ns;
+  if (isTMeta(type)) {
+    const x = type.name;
+    if (unsolved.indexOf(x) >= 0 && ns.indexOf(x) < 0) ns.push(x);
+    return ns;
+  }
+  if (isTFun(type)) {
+    unsolvedInType(unsolved, type.left, ns);
+    return unsolvedInType(unsolved, type.right, ns);
+  }
+  if (isTForall(type)) return unsolvedInType(unsolved, type.type, ns);
+  return impossible('unsolvedInType');
+};
