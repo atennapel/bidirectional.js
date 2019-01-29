@@ -1,10 +1,43 @@
 import { Expr, isVar, isAbs, isApp, isAnno, showExpr, openAbs, Var } from "./exprs";
 import { GName } from "./names";
-import { Type, isTForall, isTFun, showType, isTMeta, openTForall, TMeta, TFun, TVar } from "./types";
+import { Type, isTForall, isTFun, showType, isTMeta, openTForall, TMeta, TFun, TVar, isTVar, TForall, substTMetas } from "./types";
 import { context, infererr, apply, namestore } from "./inferctx";
 import { wfType, wfContext } from "./wellformedness";
 import { subsume } from "./subsumption";
-import { CTMeta, CTVar, CVar } from "./elems";
+import { CTMeta, CTVar, CVar, Elem } from "./elems";
+import { impossible } from "./util";
+
+// mutates ns and m
+const unsolvedInType = (unsolved: GName[], type: Type<GName>, ns: GName[]): void => {
+  if (isTVar(type)) return;
+  if (isTMeta(type)) {
+    const x = type.name;
+    if (unsolved.indexOf(x) >= 0 && ns.indexOf(x) < 0) ns.push(x);
+    return;
+  }
+  if (isTFun(type)) {
+    unsolvedInType(unsolved, type.left, ns);
+    unsolvedInType(unsolved, type.right, ns);
+    return;
+  }
+  if (isTForall(type)) return unsolvedInType(unsolved, type.type, ns);
+  return impossible('unsolvedInType');
+};
+
+const generalize = (unsolved: GName[], type: Type<GName>): Type<GName> => {
+  const ns: GName[] = [];
+  unsolvedInType(unsolved, type, ns);
+  const m: Map<GName, TVar<GName>> = new Map();
+  for (let i = 0, l = ns.length; i < l; i++) {
+    const x = ns[i];
+    const y = namestore.fresh(x);
+    m.set(x, TVar(y));
+  }
+  let c = substTMetas(type, m);
+  for (let i = ns.length - 1; i >= 0; i--)
+    c = TForall((m.get(ns[i]) as TVar<GName>).name, c);
+  return c;
+};
 
 const typesynth = (expr: Expr<GName>): Type<GName> => {
   if (isVar(expr)) {
@@ -22,8 +55,8 @@ const typesynth = (expr: Expr<GName>): Type<GName> => {
     context.add(CTMeta(a), CTMeta(b), CVar(x, ta));
     typecheck(openAbs(expr, Var(x)), tb);
     const ty = apply(TFun(ta, tb));
-    context.leave();
-    return ty;
+    const rest = context.leaveWithUnsolved();
+    return generalize(rest, ty);
   }
   if (isApp(expr)) {
     const left = typesynth(expr.left);
@@ -87,8 +120,10 @@ const typeappsynth = (type: Type<GName>, expr: Expr<GName>): Type<GName> => {
 export const infer = (expr: Expr<GName>): Type<GName> => {
   namestore.reset();
   wfContext();
+  context.enterEmpty();
   const ty = apply(typesynth(expr));
-  console.log(`${context}`);
+  const rest = context.leaveWithUnsolved();
+  const tygen = generalize(rest, ty);
   if (!context.isComplete()) return infererr(`incomplete`);
-  return ty;
+  return tygen;
 };

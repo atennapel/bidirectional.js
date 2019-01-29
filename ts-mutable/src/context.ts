@@ -1,22 +1,14 @@
 import { GName } from "./names";
-import { Elem, showElem, ElemFromTag, CTMeta, CMarker } from "./elems";
-import { cloneMap } from "./util";
+import { Elem, showElem, ElemFromTag, CMarker, isCTMeta } from "./elems";
 import { namestore } from "./inferctx";
 
 type El = Elem<GName>;
 type ElType = El['tag'];
-type IxMap = { [key in ElType]: Map<GName, number> };
 
 export class Context {
 
   constructor(
     private readonly ctx: El[] = [],
-    private readonly ix: IxMap = {
-      CTVar: new Map(),
-      CTMeta: new Map(),
-      CVar: new Map(),
-      CMarker: new Map(),
-    },
     private readonly stack: GName[] = [],
   ) {}
 
@@ -26,23 +18,13 @@ export class Context {
 
   clone(): Context {
     const ctx = this.ctx.slice();
-    const ix: IxMap = {
-      CTVar: cloneMap(this.ix.CTVar),
-      CTMeta: cloneMap(this.ix.CTMeta),
-      CVar: cloneMap(this.ix.CVar),
-      CMarker: cloneMap(this.ix.CMarker),
-    };
     const stack = this.stack.slice();
-    return new Context(ctx, ix, stack);
+    return new Context(ctx, stack);
   }
 
   addAll(es: El[]): Context {
-    for (let i = 0, l = es.length; i < l; i++) {
-      const e = es[i];
-      const j = this.ctx.length;
-      this.ctx.push(e);
-      this.ix[e.tag].set(e.name, j);
-    }
+    for (let i = 0, l = es.length; i < l; i++)
+      this.ctx.push(es[i]);
     return this;
   }
   add(...es: El[]): Context {
@@ -53,8 +35,13 @@ export class Context {
   }
 
   indexOf(ty: ElType, name: GName): number {
-    const res = this.ix[ty].get(name);
-    return typeof res === 'undefined' ? -1 : res;
+    const a = this.ctx;
+    const l = a.length;
+    for (let i = 0; i < l; i++) {
+      const c = a[i];
+      if (c.tag === ty && c.name === name) return i;
+    }
+    return -1;
   }
   contains(ty: ElType, name: GName): boolean {
     return this.indexOf(ty, name) >= 0;
@@ -64,23 +51,13 @@ export class Context {
   }
 
   pop(): El | null {
-    const el = this.ctx.pop() || null;
-    const i = this.ctx.length;
-    if (el) {
-      const j = this.ix[el.tag].get(el.name);
-      if (i === j) this.ix[el.tag].delete(el.name);
-    }
-    return el;
+    return this.ctx.pop() || null;
   }
 
   split(ty: ElType, name: GName): El[] {
     const i = this.indexOf(ty, name);
     if (i < 0) return [];
     const ret = this.ctx.splice(i);
-    for (let i = 0, l = ret.length; i < l; i++) {
-      const e = ret[i];
-      this.ix[e.tag].delete(e.name);
-    }
     ret.shift();
     return ret;
   }
@@ -93,10 +70,11 @@ export class Context {
   }
 
   isComplete(): boolean {
-    const m = this.ix.CTMeta;
-    for (let k of m.keys()) {
-      const e = this.ctx[m.get(k) as number] as CTMeta<GName>;
-      if (!e.type) return false;
+    const a = this.ctx;
+    const l = a.length;
+    for (let i = 0; i < l; i++) {
+      const c = a[i];
+      if (c.tag === 'CTMeta' && !c.type) return false;
     }
     return true;
   }
@@ -121,10 +99,22 @@ export class Context {
     this.stack.push(m);
     return m;
   }
-  leave(): El[] {
+  leave(): void {
+    const m = this.stack.pop();
+    if (!m) return;
+    this.split('CMarker', m);
+  }
+
+  leaveWithUnsolved(): GName[] {
     const m = this.stack.pop();
     if (!m) return [];
-    return this.split('CMarker', m);
+    const ret = this.split('CMarker', m);
+    const ns = [];
+    for (let i = 0, l = ret.length; i < l; i++) {
+      const c = ret[i];
+      if (isCTMeta(c) && !c.type) ns.push(c.name);
+    }
+    return ns;
   }
 
 }

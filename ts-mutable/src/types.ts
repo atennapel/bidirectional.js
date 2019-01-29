@@ -79,3 +79,18 @@ export const isMono = <N>(type: Type<N>): boolean => {
   if (isTForall(type)) return false;
   return impossible('isMono');
 };
+
+export const substTMetas = <N>(type: Type<N>, m: Map<N, Type<N>>): Type<N> => {
+  if (isTVar(type)) return type;
+  if (isTMeta(type)) return m.get(type.name) || type;
+  if (isTFun(type)) {
+    const left = substTMetas(type.left, m);
+    const right = substTMetas(type.right, m);
+    return type.left === left && type.right === right ? type : TFun(left, right);
+  }
+  if (isTForall(type)) {
+    const body = substTMetas(type.type, m);
+    return type.type === body ? type : TForall(type.name, body);
+  }
+  return impossible('substTMetas');
+};
