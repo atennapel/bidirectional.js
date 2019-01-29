@@ -34,8 +34,7 @@ const typesynth = (expr: Expr<GName>): Type<GName> => {
     const b = namestore.fresh(expr.name);
     const ta = TMeta(a);
     const tb = TMeta(b);
-    const m = context.enter();
-    context.add(CTMeta(a), CTMeta(b), CVar(x, ta));
+    const m = context.enter(CTMeta(a), CTMeta(b), CVar(x, ta));
     typecheck(openAbs(expr, Var(x)), tb);
     const ty = apply(TFun(ta, tb));
     return generalizeFrom(m, ty);

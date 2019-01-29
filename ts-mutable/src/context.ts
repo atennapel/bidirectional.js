@@ -45,7 +45,7 @@ export class Context {
     return this.indexOf(ty, name) >= 0;
   }
   lookup<T extends ElType>(ty: T, name: GName): ElemFromTag<GName>[T] | null {
-    return this.ctx[this.indexOf(ty, name)] as ElemFromTag<GName>[T] | null;
+    return (this.ctx[this.indexOf(ty, name)] || null) as ElemFromTag<GName>[T] | null;
   }
 
   pop(): El | null {
@@ -77,10 +77,10 @@ export class Context {
     return true;
   }
 
-  enter(el?: El): GName {
+  enter(...es: El[]): GName {
     const m = namestore.fresh('m');
     this.add(CMarker(m));
-    if (el) this.add(el);
+    this.addAll(es);
     return m;
   }
   leave(m: GName): void {
