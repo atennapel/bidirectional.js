@@ -6,7 +6,8 @@
   "scripts": {
     "test": "node build/src/test.js",
     "build": "tsc",
-    "buildtest": "npm run build && npm test"
+    "buildtest": "npm run build && npm test",
+    "bundle": "browserify build/src/web.js -o bundle.js"
   },
   "author": "",
   "license": "ISC",

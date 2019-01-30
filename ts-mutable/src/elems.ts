@@ -12,6 +12,7 @@ export type ElemFromTag<N> = {
   CVar: CVar<N>;
   CMarker: CMarker<N>;
 };
+export type ElemTag = Elem<any>['tag'];
 
 export interface CTVar<N> {
   readonly tag: 'CTVar';

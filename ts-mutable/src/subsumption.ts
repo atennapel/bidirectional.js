@@ -39,7 +39,8 @@ const instL = (x: TMeta<GName>, type: Type<GName>): void => {
     }
     if (isTForall(type)) {
       const y = namestore.fresh(type.name);
-      const m = context.enter(CTVar(y));
+      const m = namestore.fresh('m');
+      context.enter(m, CTVar(y));
       instL(x, openTForall(type, TVar(y)));
       context.leave(m);
       return;
@@ -74,7 +75,8 @@ const instR = (type: Type<GName>, x: TMeta<GName>): void => {
     }
     if (isTForall(type)) {
       const y = namestore.fresh(type.name);
-      const m = context.enter(CTMeta(y));
+      const m = namestore.fresh('m');
+      context.enter(m, CTMeta(y));
       instR(openTForall(type, TMeta(y)), x);
       context.leave(m);
       return;
@@ -94,14 +96,16 @@ export const subsume = (a: Type<GName>, b: Type<GName>): void => {
   }
   if (isTForall(a)) {
     const x = namestore.fresh(a.name);
-    const m = context.enter(CTMeta(x));
+    const m = namestore.fresh('m');
+    context.enter(m, CTMeta(x));
     subsume(openTForall(a, TMeta(x)), b);
     context.leave(m);
     return;
   }
   if (isTForall(b)) {
     const x = namestore.fresh(b.name);
-    const m = context.enter(CTVar(x));
+    const m = namestore.fresh('m');
+    context.enter(m, CTVar(x));
     subsume(a, openTForall(b, TVar(x)));
     context.leave(m);
     return;

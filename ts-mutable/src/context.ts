@@ -1,38 +1,33 @@
-import { GName } from "./names";
-import { Elem, showElem, ElemFromTag, CMarker, isCTMeta } from "./elems";
-import { namestore } from "./inferctx";
+import { Elem, showElem, ElemFromTag, CMarker, isCTMeta, ElemTag } from "./elems";
 
-type El = Elem<GName>;
-type ElType = El['tag'];
-
-export class Context {
+export class Context<N> {
 
   constructor(
-    private readonly ctx: El[] = [],
+    private readonly ctx: Elem<N>[] = [],
   ) {}
 
   toString(): string {
     return `[${this.ctx.map(showElem).join(', ')}]`;
   }
 
-  clone(): Context {
+  clone(): Context<N> {
     const ctx = this.ctx.slice();
     return new Context(ctx);
   }
 
-  addAll(es: El[]): Context {
+  addAll(es: Elem<N>[]): Context<N> {
     for (let i = 0, l = es.length; i < l; i++)
       this.ctx.push(es[i]);
     return this;
   }
-  add(...es: El[]): Context {
+  add(...es: Elem<N>[]): Context<N> {
     return this.addAll(es);
   }
-  append(c: Context): Context {
+  append(c: Context<N>): Context<N> {
     return this.addAll(c.ctx);
   }
 
-  indexOf(ty: ElType, name: GName): number {
+  indexOf(ty: ElemTag, name: N): number {
     const a = this.ctx;
     const l = a.length;
     for (let i = 0; i < l; i++) {
@@ -41,18 +36,18 @@ export class Context {
     }
     return -1;
   }
-  contains(ty: ElType, name: GName): boolean {
+  contains(ty: ElemTag, name: N): boolean {
     return this.indexOf(ty, name) >= 0;
   }
-  lookup<T extends ElType>(ty: T, name: GName): ElemFromTag<GName>[T] | null {
-    return (this.ctx[this.indexOf(ty, name)] || null) as ElemFromTag<GName>[T] | null;
+  lookup<T extends ElemTag>(ty: T, name: N): ElemFromTag<N>[T] | null {
+    return (this.ctx[this.indexOf(ty, name)] || null) as ElemFromTag<N>[T] | null;
   }
 
-  pop(): El | null {
+  pop(): Elem<N> | null {
     return this.ctx.pop() || null;
   }
 
-  split(ty: ElType, name: GName): El[] {
+  split(ty: ElemTag, name: N): Elem<N>[] {
     const i = this.indexOf(ty, name);
     if (i < 0) return [];
     const ret = this.ctx.splice(i);
@@ -60,7 +55,7 @@ export class Context {
     return ret;
   }
 
-  replace(ty: ElType, name: GName, es: El[]): Context {
+  replace(ty: ElemTag, name: N, es: Elem<N>[]): Context<N> {
     const right = this.split(ty, name);
     this.addAll(es);
     this.addAll(right);
@@ -77,16 +72,14 @@ export class Context {
     return true;
   }
 
-  enter(...es: El[]): GName {
-    const m = namestore.fresh('m');
+  enter(m: N, ...es: Elem<N>[]): void {
     this.add(CMarker(m));
     this.addAll(es);
-    return m;
   }
-  leave(m: GName): void {
+  leave(m: N): void {
     this.split('CMarker', m);
   }
-  leaveWithUnsolved(m: GName): GName[] {
+  leaveWithUnsolved(m: N): N[] {
     const ret = this.split('CMarker', m);
     const ns = [];
     for (let i = 0, l = ret.length; i < l; i++) {

@@ -34,7 +34,8 @@ const typesynth = (expr: Expr<GName>): Type<GName> => {
     const b = namestore.fresh(expr.name);
     const ta = TMeta(a);
     const tb = TMeta(b);
-    const m = context.enter(CTMeta(a), CTMeta(b), CVar(x, ta));
+    const m = namestore.fresh('m');
+    context.enter(m, CTMeta(a), CTMeta(b), CVar(x, ta));
     typecheck(openAbs(expr, Var(x)), tb);
     const ty = apply(TFun(ta, tb));
     return generalizeFrom(m, ty);
@@ -55,14 +56,16 @@ const typesynth = (expr: Expr<GName>): Type<GName> => {
 const typecheck = (expr: Expr<GName>, type: Type<GName>): void => {
   if (isTForall(type)) {
     const x = namestore.fresh(type.name);
-    const m = context.enter(CTVar(x));
+    const m = namestore.fresh('m');
+    context.enter(m, CTVar(x));
     typecheck(expr, openTForall(type, TVar(x)));
     context.leave(m);
     return;
   }
   if (isAbs(expr) && isTFun(type)) {
     const x = namestore.fresh(expr.name);
-    const m = context.enter(CVar(x, type.left));
+    const m = namestore.fresh('m');
+    context.enter(m, CVar(x, type.left));
     typecheck(openAbs(expr, Var(x)), type.right);
     context.leave(m);
     return;
@@ -101,7 +104,8 @@ const typeappsynth = (type: Type<GName>, expr: Expr<GName>): Type<GName> => {
 export const infer = (expr: Expr<GName>): Type<GName> => {
   namestore.reset();
   wfContext();
-  const m = context.enter();
+  const m = namestore.fresh('m');
+  context.enter(m);
   const ty = generalizeFrom(m, apply(typesynth(expr)));
   if (!context.isComplete()) return infererr(`incomplete context`);
   return ty;
