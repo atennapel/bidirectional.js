@@ -240,22 +240,36 @@ const showTerm = t => {
 };
 
 // system f ast
-const FVar = name => ({ tag: 'Var', name });
-const FAbs = (name, type, body) => ({ tag: 'Abs', name, type, body });
-const FApp = (left, right) => ({ tag: 'App', left, right });
-const FAbsT = (name, body) => ({ tag: 'Abs', name, body });
-const FAppT = (left, right) => ({ tag: 'App', left, right });
+const FVar = name => ({ tag: 'FVar', name });
+const FAbs = (name, type, body) => ({ tag: 'FAbs', name, type, body });
+const FApp = (left, right) => ({ tag: 'FApp', left, right });
+const FAbsT = (name, body) => ({ tag: 'FAbsT', name, body });
+const FAppT = (left, right) => ({ tag: 'FAppT', left, right });
+
+const fabst = (ns, body) => ns.reduceRight((x, y) => FAbsT(y, x), body);
 
 const showFTerm = t => {
   if (t.tag === 'FVar') return t.name;
   if (t.tag === 'FAbs')
-    return `(λ(${t.name} : ${showType(t.type)}). ${showTerm(t.body)})`;
+    return `(λ(${t.name} : ${showType(t.type)}). ${showFTerm(t.body)})`;
   if (t.tag === 'FApp')
-    return `(${showTerm(t.left)} ${showTerm(t.right)})`;
+    return `(${showFTerm(t.left)} ${showFTerm(t.right)})`;
   if (t.tag === 'FAbsT')
-    return `(Λ${showType(t.name)}. ${showTerm(t.body)})`;
+    return `(Λ${showType(t.name)}. ${showFTerm(t.body)})`;
   if (t.tag === 'FAppT')
-    return `(${showTerm(t.left)} @${showType(t.right)})`;
+    return `(${showFTerm(t.left)} @${showType(t.right)})`;
+};
+
+const pruneFTerm = t => {
+  if (t.tag === 'FAbs')
+    return FAbs(t.name, prune(t.type), pruneFTerm(t.body));
+  if (t.tag === 'FApp')
+    return FApp(pruneFTerm(t.left), pruneFTerm(t.right));
+  if (t.tag === 'FAbsT')
+    return FAbsT(t.name, pruneFTerm(t.body));
+  if (t.tag === 'FAppT')
+    return FAppT(pruneFTerm(t.left), prune(t.right));
+  return t;
 };
 
 // inference
@@ -270,14 +284,15 @@ const generalize = (m, t) => {
     c.type = tv;
     tvs[i] = tv;
   }
-  return tforall(tvs, t);
+  return [tvs, tforall(tvs, t)];
 };
 
 const infer = (genv, term) => {
   const m = Marker();
   deplist.push(m);
-  const ty = synth(genv, Nil, term);
-  return prune(generalize(m, ty));
+  const [ty, fterm] = synth(genv, Nil, term);
+  const [tvs, ty2] = generalize(m, ty);
+  return [prune(ty2), fabst(tvs, pruneFTerm(fterm))];
 };
 
 const synth = (genv, env, term) => {
@@ -285,32 +300,34 @@ const synth = (genv, env, term) => {
   if (term.tag === 'Var') {
     const t = lookup(term.name, env) || genv[term.name];
     if (!t) return terr(`undefined var ${term.name}`);
-    return t;
+    return [t, FVar(term.name)];
   }
   if (term.tag === 'Ann') {
     wfType(term.type);
-    check(genv, env, term.term, term.type);
-    return term.type;
+    const fterm = check(genv, env, term.term, term.type);
+    return [term.type, fterm];
   }
   if (term.tag === 'App') {
-    const ty = synth(genv, env, term.left);
-    return synthapp(genv, env, ty, term.right);
+    const [ty, ff] = synth(genv, env, term.left);
+    const [ty2, extra, fa] = synthapp(genv, env, ty, term.right);
+    return [ty2, FApp(extra.reduceRight((x, y) => FAppT(y, x), ff), fa)];
   }
   if (term.tag === 'Abs') {
     const a = TMeta();
     const b = TMeta();
     const m = Marker();
     deplist.push(m, a, b);
-    check(genv, extend(term.name, a, env), term.body, b);
-    return generalize(m, TFun(a, b));
+    const body = check(genv, extend(term.name, a, env), term.body, b);
+    const [tvs, ty] = generalize(m, TFun(a, b));
+    return [ty, fabst(tvs, FAbs(term.name, a, body))];
   }
   if (term.tag === 'AppT') {
     if (term.type1.tag !== 'TForall')
       return terr(`not a forall in ${showTerm(term.tag)}`);
     wfType(term.type1);
     wfType(term.type2);
-    check(genv, env, term.term, term.type1);
-    return openTForall(term.type2, term.type1);
+    const body = check(genv, env, term.term, term.type1);
+    return [openTForall(term.type2, term.type1), FAppT(body, term.type2)];
   }
   return terr(`cannot synth ${showTerm(term)}`);
 };
@@ -319,30 +336,32 @@ const check = (genv, env, term, type) => {
   if (type.tag === 'TForall') {
     const m = Marker();
     deplist.push(m, type.name);
-    check(genv, env, term, type.type);
+    const body = check(genv, env, term, type.type);
     drop(m);
-    return;
+    return FAbsT(type.name, body);
   }
   if (term.tag === 'Abs' && isTFun(type)) {
     const m = Marker();
-    check(genv, extend(term.name, tfunL(type), env),
+    const body = check(genv, extend(term.name, tfunL(type), env),
       term.body, tfunR(type));
     drop(m);
-    return;
+    return FAbs(term.name, tfunL(type), body);
   }
-  const ty = synth(genv, env, term);
+  const [ty, body] = synth(genv, env, term);
   subsume(ty, type);
+  return body;
 };
 const synthapp = (genv, env, type, term) => {
   console.log(`synthapp ${showType(type)} @ ${showTerm(term)}`);
   if (type.tag === 'TForall') {
     const tm = TMeta();
     deplist.push(tm);
-    return synthapp(genv, env, openTForall(tm, type), term);
+    const [ty, extra, fa] = synthapp(genv, env, openTForall(tm, type), term);
+    return [ty, [tm].concat(extra), fa];
   }
   if (isTFun(type)) {
-    check(genv, env, term, tfunL(type));
-    return tfunR(type);
+    const arg = check(genv, env, term, tfunL(type));
+    return [tfunR(type), [], arg];
   }
   if (type.tag === 'TMeta') {
     if (type.type) return synthapp(genv, env, type.type, term);
@@ -352,8 +371,8 @@ const synthapp = (genv, env, type, term) => {
     const b = TMeta();
     replace(i, [b, a]);
     type.type = TFun(a, b);
-    check(genv, env, term, a);
-    return b;
+    const body = check(genv, env, term, a);
+    return [b, [], body];
   }
   return terr(`cannot synthapp ${showType(type)} @ ${showTerm(term)}`);
 };
@@ -374,7 +393,8 @@ const env = {
   id: tid,
 };
 
-const term = app(AppT(v('id'), tid, tid, tid), v('id'));
+const term = abs(['x'], v('x'));
 console.log(showTerm(term));
-const ty = infer(env, term);
+const [ty, fterm] = infer(env, term);
 console.log(showType(ty));
+console.log(showFTerm(fterm));
