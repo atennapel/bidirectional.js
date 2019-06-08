@@ -5,11 +5,13 @@
 
 // util
 const terr = msg => { throw new TypeError(msg) };
+const id = x => x;
+const compose = (f, g) => x => f(g(x));
 
 // names
-let id = 0;
-const freshId = () => id++;
-const resetId = () => { id = 0 };
+let _id = 0;
+const freshId = () => _id++;
+const resetId = () => { _id = 0 };
 
 // types
 const TCon = name => ({ tag: 'TCon', name });
@@ -108,6 +110,7 @@ const showDeps = () => `[${deplist.map(showElem).join(', ')}]`;
 const solve = (x, i, t) => {
   remove(i);
   x.type = t;
+  return id;
 };
 const subsumeTMeta = (x, t, right) => {
   console.log(`subsumeTMeta ${right ? `${showTypeR(t)} =: ${showTypeR(x)}` : `${showTypeR(x)} := ${showTypeR(t)}`}`);
@@ -142,39 +145,43 @@ const subsumeTMeta = (x, t, right) => {
 };
 const subsume = (t1, t2) => {
   console.log(`subsume ${showTypeR(t1)} <: ${showTypeR(t2)} | ${showDeps()}`);
-  if (t1.tag === 'TCon' && t2.tag === 'TCon' && t1 === t2) return;
+  if (t1.tag === 'TCon' && t2.tag === 'TCon' && t1 === t2) return id;
   if (t1.tag === 'TVar' && t2.tag === 'TVar' && t1 === t2) {
     if (indexOf(t1) < 0)
       return terr(`undefined tvar ${showType(t1)}`);
-    return;
+    return id;
   }
   if (isTFun(t1) && isTFun(t2)) {
-    subsume(tfunL(t2), tfunL(t1));
-    return subsume(tfunR(t1), tfunR(t2));
+    const f1 = subsume(tfunL(t2), tfunL(t1));
+    const f2 = subsume(tfunR(t1), tfunR(t2));
+    return compose(f2, f1);
   }
   if (t1.tag === 'TApp' && t2.tag === 'TApp') {
-    unify(t1.left, t2.left);
-    return unify(t1.right, t2.right);
+    const f1 = unify(t1.left, t2.left);
+    const f2 = unify(t1.right, t2.right);
+    return compose(f2, f1);
   }
   if (t2.tag === 'TForall') {
     const m = Marker();
     deplist.push(m, t2.name);
-    subsume(t1, t2.type);
+    const f = subsume(t1, t2.type);
     drop(m);
-    return;
+    return compose(t => FAbsT(t2.name, t), f);
   }
   if (t1.tag === 'TForall') {
     const tm = TMeta();
     deplist.push(tm);
-    return subsume(openTForall(tm, t1), t2);
+    const f = subsume(openTForall(tm, t1), t2);
+    return compose(t => FAppT(t, tm), f);
   }
   if (t1.tag === 'TMeta') return subsumeTMeta(t1, t2, false);
   if (t2.tag === 'TMeta') return subsumeTMeta(t2, t1, true);
   return terr(`cannot subsume ${showType(t1)} <: ${showType(t2)}`);
 };
 const unify = (t1, t2) => {
-  subsume(t1, t2);
-  subsume(t2, t1);
+  const f1 = subsume(t1, t2);
+  const f2 = subsume(t2, t1);
+  return compose(f2, f1);
 };
 
 // local env
@@ -354,8 +361,8 @@ const check = (genv, env, term, type) => {
     return FAbs(term.name, tfunL(type), body);
   }
   const [ty, body] = synth(genv, env, term);
-  subsume(ty, type);
-  return body;
+  const f = subsume(ty, type);
+  return f(body);
 };
 const synthapp = (genv, env, type, term) => {
   console.log(`synthapp ${showType(type)} @ ${showTerm(term)}`);
@@ -400,11 +407,9 @@ const env = {
   id: tid,
 };
 
-const term = app(abs(['x'], v('x')), v('zero'));
+const term = abs(['x', 'y', 'z'], v('x'));
 console.log(showTerm(term));
 const [ty, fterm] = infer(env, term);
 console.log(showTerm(term));
 console.log(showType(ty));
 console.log(showFTerm(fterm));
-
-// - elaboration of subsumption
