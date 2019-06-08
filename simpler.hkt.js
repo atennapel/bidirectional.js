@@ -191,25 +191,6 @@ const lookup = (k, l) => {
   return null;
 };
 
-// ast
-const Var = name => ({ tag: 'Var', name });
-const Abs = (name, body) => ({ tag: 'Abs', name, body });
-const App = (left, right) => ({ tag: 'App', left, right });
-const Ann = (term, type) => ({ tag: 'Ann', term, type });
-
-const abs = (ns, t) => ns.reduceRight((x, y) => Abs(y, x), t);
-const appFrom = a => a.reduce(App);
-function app() { return appFrom(Array.from(arguments)) }
-
-const showTerm = t => {
-  if (t.tag === 'Var') return t.name;
-  if (t.tag === 'Abs') return `(\\${t.name} -> ${showTerm(t.body)})`;
-  if (t.tag === 'App')
-    return `(${showTerm(t.left)} ${showTerm(t.right)})`;
-  if (t.tag === 'Ann')
-    return `(${showTerm(t.term)} : ${showType(t.type)})`;
-};
-
 // wf
 const wfType = t => {
   if (t.tag === 'TVar') {
@@ -233,6 +214,47 @@ const wfType = t => {
     drop(m);
     return;
   }
+};
+
+// ast
+const Var = name => ({ tag: 'Var', name });
+const Abs = (name, body) => ({ tag: 'Abs', name, body });
+const App = (left, right) => ({ tag: 'App', left, right });
+const Ann = (term, type) => ({ tag: 'Ann', term, type });
+const AppT = (term, type1, type2) =>
+  ({ tag: 'AppT', term, type1, type2 });
+
+const abs = (ns, t) => ns.reduceRight((x, y) => Abs(y, x), t);
+const appFrom = a => a.reduce(App);
+function app() { return appFrom(Array.from(arguments)) }
+
+const showTerm = t => {
+  if (t.tag === 'Var') return t.name;
+  if (t.tag === 'Abs') return `(\\${t.name} -> ${showTerm(t.body)})`;
+  if (t.tag === 'App')
+    return `(${showTerm(t.left)} ${showTerm(t.right)})`;
+  if (t.tag === 'Ann')
+    return `(${showTerm(t.term)} : ${showType(t.type)})`;
+  if (t.tag === 'AppT')
+    return `(${showTerm(t.term)} : ${showType(t.type1)} @ ${showType(t.type2)})`;
+};
+
+// system f ast
+const FVar = name => ({ tag: 'Var', name });
+const FAbs = (name, body) => ({ tag: 'Abs', name, body });
+const FApp = (left, right) => ({ tag: 'App', left, right });
+const FAbsT = (name, body) => ({ tag: 'Abs', name, body });
+const FAppT = (left, right) => ({ tag: 'App', left, right });
+
+const showFTerm = t => {
+  if (t.tag === 'FVar') return t.name;
+  if (t.tag === 'FAbs') return `(\\${t.name} -> ${showTerm(t.body)})`;
+  if (t.tag === 'FApp')
+    return `(${showTerm(t.left)} ${showTerm(t.right)})`;
+  if (t.tag === 'FAbsT')
+    return `(/\\${showType(t.name)} -> ${showTerm(t.body)})`;
+  if (t.tag === 'FAppT')
+    return `(${showTerm(t.left)} @ ${showType(t.right)})`;
 };
 
 // inference
@@ -280,6 +302,14 @@ const synth = (genv, env, term) => {
     deplist.push(m, a, b);
     check(genv, extend(term.name, a, env), term.body, b);
     return generalize(m, TFun(a, b));
+  }
+  if (term.tag === 'AppT') {
+    if (term.type1.tag !== 'TForall')
+      return terr(`not a forall in ${showTerm(term.tag)}`);
+    wfType(term.type1);
+    wfType(term.type2);
+    check(genv, env, term.term, term.type1);
+    return openTForall(term.type2, term.type1);
   }
   return terr(`cannot synth ${showTerm(term)}`);
 };
@@ -343,7 +373,7 @@ const env = {
   id: tid,
 };
 
-const term = Ann(abs(['x'], v('x')), tfun(tid, tid));
+const term = app(AppT(v('id'), tid, tid, tid), v('id'));
 console.log(showTerm(term));
 const ty = infer(env, term);
 console.log(showType(ty));
