@@ -270,6 +270,18 @@ const showFTerm = t => {
     return `(${showFTerm(t.left)} @${showType(t.right)})`;
 };
 
+const substFTVar = (x, s, t) => {
+  if (t.tag === 'FAbs')
+    return FAbs(t.name, substTVar(x, s, t.type), substFTVar(x, s, t.body));
+  if (t.tag === 'FApp')
+    return FApp(substFTVar(x, s, t.left), substFTVar(x, s, t.right));
+  if (t.tag === 'FAbsT')
+    return t.name === x ? t : FAbsT(t.name, substFTVar(x, s, t.body));
+  if (t.tag === 'FAppT')
+    return FAppT(substFTVar(x, s, t.left), substTVar(x, s, t.right));
+  return t;
+};
+
 const pruneFTerm = t => {
   if (t.tag === 'FAbs')
     return FAbs(t.name, prune(t.type), pruneFTerm(t.body));
@@ -279,6 +291,22 @@ const pruneFTerm = t => {
     return FAbsT(t.name, pruneFTerm(t.body));
   if (t.tag === 'FAppT')
     return FAppT(pruneFTerm(t.left), prune(t.right));
+  return t;
+};
+
+const simplifyFTerm = t => {
+  if (t.tag === 'FAbs')
+    return FAbs(t.name, t.type, simplifyFTerm(t.body));
+  if (t.tag === 'FApp')
+    return FApp(simplifyFTerm(t.left), simplifyFTerm(t.right));
+  if (t.tag === 'FAbsT')
+    return FAbsT(t.name, simplifyFTerm(t.body));
+  if (t.tag === 'FAppT') {
+    const l = simplifyFTerm(t.left);
+    if (l.tag === 'FAbsT')
+      return simplifyFTerm(substFTVar(l.name, t.right, l.body));
+    return FAppT(l, t.right);
+  }
   return t;
 };
 
@@ -302,7 +330,7 @@ const infer = (genv, term) => {
   deplist.push(m);
   const [ty, fterm] = synth(genv, Nil, term);
   const [tvs, ty2] = generalize(m, ty);
-  return [prune(ty2), fabst(tvs, pruneFTerm(fterm))];
+  return [prune(ty2), simplifyFTerm(fabst(tvs, pruneFTerm(fterm)))];
 };
 
 const synth = (genv, env, term) => {
@@ -413,3 +441,5 @@ const [ty, fterm] = infer(env, term);
 console.log(showTerm(term));
 console.log(showType(ty));
 console.log(showFTerm(fterm));
+
+// fix order of generated type applications
