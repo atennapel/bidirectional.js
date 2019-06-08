@@ -42,7 +42,7 @@ const showTypeR = t => {
   if (t.tag === 'TApp')
     return `(${showTypeR(t.left)} ${showTypeR(t.right)})`;
   if (t.tag === 'TForall')
-    return `(forall ${showTypeR(t.name)}. ${showTypeR(t.type)})`;
+    return `(∀${showTypeR(t.name)}. ${showTypeR(t.type)})`;
 };
 
 const prune = t => {
@@ -230,31 +230,32 @@ function app() { return appFrom(Array.from(arguments)) }
 
 const showTerm = t => {
   if (t.tag === 'Var') return t.name;
-  if (t.tag === 'Abs') return `(\\${t.name} -> ${showTerm(t.body)})`;
+  if (t.tag === 'Abs') return `(λ${t.name} -> ${showTerm(t.body)})`;
   if (t.tag === 'App')
     return `(${showTerm(t.left)} ${showTerm(t.right)})`;
   if (t.tag === 'Ann')
     return `(${showTerm(t.term)} : ${showType(t.type)})`;
   if (t.tag === 'AppT')
-    return `(${showTerm(t.term)} : ${showType(t.type1)} @ ${showType(t.type2)})`;
+    return `((${showTerm(t.term)} : ${showType(t.type1)}) @${showType(t.type2)})`;
 };
 
 // system f ast
 const FVar = name => ({ tag: 'Var', name });
-const FAbs = (name, body) => ({ tag: 'Abs', name, body });
+const FAbs = (name, type, body) => ({ tag: 'Abs', name, type, body });
 const FApp = (left, right) => ({ tag: 'App', left, right });
 const FAbsT = (name, body) => ({ tag: 'Abs', name, body });
 const FAppT = (left, right) => ({ tag: 'App', left, right });
 
 const showFTerm = t => {
   if (t.tag === 'FVar') return t.name;
-  if (t.tag === 'FAbs') return `(\\${t.name} -> ${showTerm(t.body)})`;
+  if (t.tag === 'FAbs')
+    return `(λ(${t.name} : ${showType(t.type)}). ${showTerm(t.body)})`;
   if (t.tag === 'FApp')
     return `(${showTerm(t.left)} ${showTerm(t.right)})`;
   if (t.tag === 'FAbsT')
-    return `(/\\${showType(t.name)} -> ${showTerm(t.body)})`;
+    return `(Λ${showType(t.name)}. ${showTerm(t.body)})`;
   if (t.tag === 'FAppT')
-    return `(${showTerm(t.left)} @ ${showType(t.right)})`;
+    return `(${showTerm(t.left)} @${showType(t.right)})`;
 };
 
 // inference
