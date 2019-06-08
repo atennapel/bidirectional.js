@@ -140,8 +140,11 @@ const subsume = (t1, t2) => {
     return subsume(t1.right, t2.right);
   }
   if (t2.tag === 'TForall') {
-    deplist.push(t2.name);
-    return subsume(t1, t2.type);
+    const m = Marker();
+    deplist.push(m, t2.name);
+    subsume(t1, t2.type);
+    drop(m);
+    return;
   }
   if (t1.tag === 'TForall') {
     const tm = TMeta();
@@ -312,7 +315,9 @@ const tt = TVar('t');
 const tr = TVar('r');
 const v = Var;
 
-const term = app(abs(['x', 'y'], v('x')), abs(['x'], v('x')));
+const tid = TForall(tt, TFun(tt, tt));
+
+const term = Ann(abs(['x'], v('x')), TFun(tid, tid));
 console.log(showTerm(term));
 const ty = infer(term);
 console.log(showType(ty));
