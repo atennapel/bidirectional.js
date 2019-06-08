@@ -149,7 +149,7 @@ const subsume = (t1, t2) => {
     return;
   }
   if (isTFun(t1) && isTFun(t2)) {
-    subsume(tfunL(t2), tfunR(t1));
+    subsume(tfunL(t2), tfunL(t1));
     return subsume(tfunR(t1), tfunR(t2));
   }
   if (t1.tag === 'TApp' && t2.tag === 'TApp') {
@@ -190,6 +190,9 @@ const lookup = (k, l) => {
   }
   return null;
 };
+
+const foldr = (f, i, l) =>
+  l.tag === 'Cons' ? f(l.head, foldr(f, i, l.tail)) : i;
 
 // wf
 const wfType = t => {
@@ -280,7 +283,7 @@ const generalize = (m, t) => {
   const tvs = Array(l);
   for (let i = 0; i < l; i++) {
     const c = tms[i];
-    const tv = TVar(`\$${c.id}`);
+    const tv = TVar(`'${c.id}`);
     c.type = tv;
     tvs[i] = tv;
   }
@@ -310,7 +313,7 @@ const synth = (genv, env, term) => {
   if (term.tag === 'App') {
     const [ty, ff] = synth(genv, env, term.left);
     const [ty2, extra, fa] = synthapp(genv, env, ty, term.right);
-    return [ty2, FApp(extra.reduceRight((x, y) => FAppT(y, x), ff), fa)];
+    return [ty2, FApp(foldr((x, y) => FAppT(y, x), ff, extra), fa)];
   }
   if (term.tag === 'Abs') {
     const a = TMeta();
@@ -327,7 +330,10 @@ const synth = (genv, env, term) => {
     wfType(term.type1);
     wfType(term.type2);
     const body = check(genv, env, term.term, term.type1);
-    return [openTForall(term.type2, term.type1), FAppT(body, term.type2)];
+    return [
+      openTForall(term.type2, term.type1),
+      FAppT(body, term.type2),
+    ];
   }
   return terr(`cannot synth ${showTerm(term)}`);
 };
@@ -356,12 +362,13 @@ const synthapp = (genv, env, type, term) => {
   if (type.tag === 'TForall') {
     const tm = TMeta();
     deplist.push(tm);
-    const [ty, extra, fa] = synthapp(genv, env, openTForall(tm, type), term);
-    return [ty, [tm].concat(extra), fa];
+    const [ty, extra, fa] = synthapp(genv, env,
+      openTForall(tm, type), term);
+    return [ty, Cons(tm, extra), fa];
   }
   if (isTFun(type)) {
     const arg = check(genv, env, term, tfunL(type));
-    return [tfunR(type), [], arg];
+    return [tfunR(type), Nil, arg];
   }
   if (type.tag === 'TMeta') {
     if (type.type) return synthapp(genv, env, type.type, term);
@@ -372,7 +379,7 @@ const synthapp = (genv, env, type, term) => {
     replace(i, [b, a]);
     type.type = TFun(a, b);
     const body = check(genv, env, term, a);
-    return [b, [], body];
+    return [b, Nil, body];
   }
   return terr(`cannot synthapp ${showType(type)} @ ${showTerm(term)}`);
 };
@@ -387,14 +394,17 @@ const v = Var;
 const tid = TForall(tt, TFun(tt, tt));
 
 const env = {
-  true: tInt,
+  zero: tInt,
   singleton: tforall([tt], tfun(tt, tapp(tList, tt))),
   nil: tforall([tt], tapp(tList, tt)),
   id: tid,
 };
 
-const term = abs(['x'], v('x'));
+const term = app(abs(['x'], v('x')), v('zero'));
 console.log(showTerm(term));
 const [ty, fterm] = infer(env, term);
+console.log(showTerm(term));
 console.log(showType(ty));
 console.log(showFTerm(fterm));
+
+// - elaboration of subsumption
