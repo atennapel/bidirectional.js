@@ -5,6 +5,5 @@ I'm using reference cells for the meta type variables to reduce the amount of su
 I also use meta type variables for the synthesis judgments (for the same reason).
 
 Questions:
-- How to extend with type applications?
 - How/when to do generalization?
 - Can the system be easily extended to do kind inference (on the type annotations)

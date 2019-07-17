@@ -9,6 +9,8 @@ const TVar = name => ({ tag: 'TVar', name });
 const TFun = (left, right) => ({ tag: 'TFun', left, right });
 const TForall = (name, type) => ({ tag: 'TForall', name, type });
 
+const tforall = (ns, t) => ns.reduceRight((t, x) => TForall(x, t), t);
+
 const showType = type => {
   if (type.tag === 'TMeta') return `?${type.id}${type.type ? `{${showType(type.type)}}` : ''}`;
   if (type.tag === 'TVar') return type.name;
@@ -63,6 +65,18 @@ const occursTMeta = (m, t) => {
     return occursTMeta(m, t.left) || occursTMeta(m, t.right);
   if (t.tag === 'TForall') return occursTMeta(m, t.type);
   return false;
+};
+
+const tmetas = (t, a = []) => {
+  if (t.tag === 'TMeta') {
+    if (t.type) return tmetas(t.type, a);
+    if (a.indexOf(t) >= 0) return a;
+    a.push(t);
+    return a;
+  }
+  if (t.tag === 'TFun') return tmetas(t.right, tmetas(t.left, a));
+  if (t.tag === 'TForall') return tmetas(t.type, a);
+  return a;
 };
 
 // terms
@@ -328,10 +342,19 @@ const steps = wl => {
   }
 };
 
+const generalize = tm => {
+  const tvs = tmetas(tm).map(m => {
+    const x = `t${m.id}`;
+    m.type = TVar(x);
+    return x;
+  });
+  return tforall(tvs, prune(tm));
+};
+
 const infer = term => {
   const tm = freshTMeta();
   steps([JSynth(term, tm, JDone)]);
-  return prune(tm);
+  return generalize(tm);
 };
 
 // testing
@@ -340,7 +363,7 @@ const tv = TVar;
 const tid = TForall('t', TFun(tv('t'), tv('t')));
 const id = App(AppT(AbsT('t', Abs('x', Var('x')), TFun(tv('t'), tv('t'))), tid), Abs('y', Var('y')));
 
-const term = id;
+const term = Abs('x', Abs('y', Var('x')));
 console.log(showTerm(term));
 const type = infer(term);
 console.log(showType(type));
