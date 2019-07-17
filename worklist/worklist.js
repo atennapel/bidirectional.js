@@ -153,10 +153,10 @@ const step = wl => {
     if (left.tag === 'TFun' && right.tag === 'TFun')
       return wl.push(JSubtype(left.right, right.right), JSubtype(right.left, left.left));
     if (right.tag === 'TForall')
-      return wl.push(right.name, JSubtype(left, right.type));
+      return wl.push(TVar(right.name), JSubtype(left, right.type));
     if (left.tag === 'TForall') {
       const m = freshTMeta();
-      return wl.push(m, openTForall(left, m), right);
+      return wl.push(m, JSubtype(openTForall(left, m), right));
     }
     if (left.tag === 'TMeta' && right.tag === 'TFun') {
       const i = indexTMeta(wl, left);
@@ -309,7 +309,9 @@ const infer = term => {
 // testing
 const tv = TVar;
 
-const term = Ann(Abs('x', Var('x')), TForall('t', TFun(tv('t'), tv('t'))));
+const id = Ann(Abs('x', Var('x')), TForall('t', TFun(tv('t'), tv('t'))));
+
+const term = App(id, id);
 console.log(showTerm(term));
 const type = infer(term);
 console.log(showType(type));
