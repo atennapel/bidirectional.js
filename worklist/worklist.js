@@ -7,6 +7,7 @@ const freshTMeta = () => TMeta(freshTMetaId());
 
 const TVar = name => ({ tag: 'TVar', name });
 const TFun = (left, right) => ({ tag: 'TFun', left, right });
+const TApp = (left, right) => ({ tag: 'TApp', left, right });
 const TForall = (name, type) => ({ tag: 'TForall', name, type });
 
 const tforall = (ns, t) => ns.reduceRight((t, x) => TForall(x, t), t);
@@ -15,6 +16,7 @@ const showType = type => {
   if (type.tag === 'TMeta') return `?${type.id}${type.type ? `{${showType(type.type)}}` : ''}`;
   if (type.tag === 'TVar') return type.name;
   if (type.tag === 'TFun') return `(${showType(type.left)} -> ${showType(type.right)})`;
+  if (type.tag === 'TApp') return `(${showType(type.left)} ${showType(type.right)})`;
   if (type.tag === 'TForall') return `(forall ${type.name}. ${showType(type.type)})`;
 };
 
@@ -36,6 +38,11 @@ const prune = type => {
     const r = prune(type.right);
     return l === type.left && r === type.right ? type : TFun(l, r);
   }
+  if (type.tag === 'TApp') {
+    const l = prune(type.left);
+    const r = prune(type.right);
+    return l === type.left && r === type.right ? type : TApp(l, r);
+  }
   if (type.tag === 'TForall') {
     const b = prune(type.type);
     return b === type.type ? type : TForall(type.name, b);
@@ -50,6 +57,11 @@ const substTVar = (x, s, t) => {
     const r = substTVar(x, s, t.right);
     return l === t.left && r === t.right ? t : TFun(l, r);
   }
+  if (t.tag === 'TApp') {
+    const l = substTVar(x, s, t.left);
+    const r = substTVar(x, s, t.right);
+    return l === t.left && r === t.right ? t : TApp(l, r);
+  }
   if (t.tag === 'TForall') {
     if (t.name === x) return t;
     const b = substTVar(x, s, t.type);
@@ -63,6 +75,8 @@ const occursTMeta = (m, t) => {
   if (m === t) return true;
   if (t.tag === 'TFun')
     return occursTMeta(m, t.left) || occursTMeta(m, t.right);
+  if (t.tag === 'TApp')
+    return occursTMeta(m, t.left) || occursTMeta(m, t.right);
   if (t.tag === 'TForall') return occursTMeta(m, t.type);
   return false;
 };
@@ -75,6 +89,7 @@ const tmetas = (t, a = []) => {
     return a;
   }
   if (t.tag === 'TFun') return tmetas(t.right, tmetas(t.left, a));
+  if (t.tag === 'TApp') return tmetas(t.right, tmetas(t.left, a));
   if (t.tag === 'TForall') return tmetas(t.type, a);
   return a;
 };
@@ -176,6 +191,13 @@ const step = wl => {
     if (left.tag === 'TVar' && right.tag === 'TVar' && left.name === right.name) return;
     if (left.tag === 'TFun' && right.tag === 'TFun')
       return wl.push(JSubtype(left.right, right.right), JSubtype(right.left, left.left));
+    if (left.tag === 'TApp' && right.tag === 'TApp')
+      return wl.push(
+        JSubtype(right.right, left.right),
+        JSubtype(left.right, right.right),
+        JSubtype(right.left, left.left),
+        JSubtype(left.left, right.left),
+      );
     if (right.tag === 'TForall')
       return wl.push(TVar(right.name), JSubtype(left, right.type));
     if (left.tag === 'TForall') {
@@ -202,6 +224,30 @@ const step = wl => {
       const a = freshTMeta();
       const b = freshTMeta();
       const ty = TFun(a, b);
+      right.type = ty;
+      replace2(wl, i, a, b);
+      return wl.push(JSubtype(left, ty));
+    }
+    if (left.tag === 'TMeta' && right.tag === 'TApp') {
+      const i = indexTMeta(wl, left);
+      if (i < 0) return terr(`undefined tmeta ${showType(left)}`);
+      if (occursTMeta(left, right))
+        return terr(`occurs check failed ${showJudgment(top)}`);
+      const a = freshTMeta();
+      const b = freshTMeta();
+      const ty = TApp(a, b);
+      left.type = ty;
+      replace2(wl, i, a, b);
+      return wl.push(JSubtype(ty, right));
+    }
+    if (left.tag === 'TApp' && right.tag === 'TMeta') {
+      const i = indexTMeta(wl, right);
+      if (i < 0) return terr(`undefined tmeta ${showType(right)}`);
+      if (occursTMeta(right, left))
+        return terr(`occurs check failed ${showJudgment(top)}`);
+      const a = freshTMeta();
+      const b = freshTMeta();
+      const ty = TApp(a, b);
       right.type = ty;
       replace2(wl, i, a, b);
       return wl.push(JSubtype(left, ty));
@@ -351,19 +397,31 @@ const generalize = tm => {
   return tforall(tvs, prune(tm));
 };
 
-const infer = term => {
+const infer = (term, ctx = []) => {
   const tm = freshTMeta();
-  steps([JSynth(term, tm, JDone)]);
+  ctx.push(JSynth(term, tm, JDone));
+  steps(ctx);
   return generalize(tm);
 };
 
 // testing
 const tv = TVar;
+const v = Var;
+function app() { return Array.from(arguments).reduce(App) }
+function tapp() { return Array.from(arguments).reduce(TApp) }
+function tfun() { return Array.from(arguments).reduceRight((x, y) => TFun(y, x)) }
+const abs = (ns, b) => ns.reduceRight((x, y) => Abs(y, x), b); 
+const tList = TVar('List');
 
 const tid = TForall('t', TFun(tv('t'), tv('t')));
 const id = App(AppT(AbsT('t', Abs('x', Var('x')), TFun(tv('t'), tv('t'))), tid), Abs('y', Var('y')));
 
-const term = Abs('x', Abs('y', Var('x')));
+const ctx = [
+  tList,
+  CVar('single', tforall(['t'], tfun(tv('t'), tapp(tList, tv('t'))))),
+];
+
+const term = App(AppT(v('single'), tid), abs(['x'], v('x')));
 console.log(showTerm(term));
-const type = infer(term);
+const type = infer(term, ctx);
 console.log(showType(type));
