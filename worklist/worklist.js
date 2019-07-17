@@ -302,8 +302,10 @@ const step = wl => {
       return wl.push(cont);
     }
     if (term.tag === 'Ann') {
-      if (!wfType(wl.slice(), term.type))
+      const l = wl.length;
+      if (!wfType(wl, term.type))
         return terr(`type not wellformed: ${showJudgment(top)}`);
+      wl.splice(l, wl.length);
       result.type = term.type;
       return wl.push(cont, JCheck(term.term, term.type));
     }
@@ -408,7 +410,7 @@ ctx.push(
   CVar('True', tBool),
 );
 
-const term = abs(['f'], app(v('f'), v('True')));
+const term = abs(['f'], app(v('f'), app(v('single'), v('True'))));
 console.log(showTerm(term));
 const type = infer(term, ctx);
 console.log(showType(type));
