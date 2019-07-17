@@ -235,7 +235,7 @@ const step = wl => {
         const ty = TFun(a, b);
         type.type = ty;
         replace2(wl, i, a, b);
-        return wl.push(CVar(term.name, a), JCheck(term, b));
+        return wl.push(CVar(term.name, a), JCheck(term.body, b));
       }
     }
     const result = freshTMeta();
@@ -309,9 +309,9 @@ const infer = term => {
 // testing
 const tv = TVar;
 
-const id = Ann(Abs('x', Var('x')), TForall('t', TFun(tv('t'), tv('t'))));
+const id = Abs('x', Abs('y', Var('x')));
 
-const term = App(id, id);
+const term = Abs('x', Var('x'));
 console.log(showTerm(term));
 const type = infer(term);
 console.log(showType(type));
