@@ -164,14 +164,20 @@ const initialContext = () => [tFun];
 const terr = msg => { throw new TypeError(msg) };
 
 // wellformedness
-const wfType = (wl, t) => {
+const wfTypeR = (wl, t) => {
   if (t.tag === 'TVar') return indexTVar(wl, t.name) >= 0;
   if (t.tag === 'TMeta') return indexTMeta(wl, t) >= 0;
-  if (t.tag === 'TApp') return wfType(wl, t.left) && wfType(wl, t.right);
+  if (t.tag === 'TApp') return wfTypeR(wl, t.left) && wfTypeR(wl, t.right);
   if (t.tag === 'TForall') {
     wl.push(TVar(t.name));
-    return wfType(wl, t.type);
+    return wfTypeR(wl, t.type);
   }
+};
+const wfType = (wl, t) => {
+  const l = wl.length;
+  const b = wfTypeR(wl, t);
+  wl.splice(l, wl.length);
+  return b;
 };
 
 // algorithm
@@ -302,10 +308,8 @@ const step = wl => {
       return wl.push(cont);
     }
     if (term.tag === 'Ann') {
-      const l = wl.length;
       if (!wfType(wl, term.type))
         return terr(`type not wellformed: ${showJudgment(top)}`);
-      wl.splice(l, wl.length);
       result.type = term.type;
       return wl.push(cont, JCheck(term.term, term.type));
     }
