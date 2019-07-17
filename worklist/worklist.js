@@ -68,15 +68,20 @@ const occursTMeta = (m, t) => {
 // terms
 const Var = name => ({ tag: 'Var', name });
 const Abs = (name, body) => ({ tag: 'Abs', name, body });
+const AbsT = (name, body, type) => ({ tag: 'AbsT', name, body, type });
 const App = (left, right) => ({ tag: 'App', left, right });
+const AppT = (left, right) => ({ tag: 'AppT', left, right });
 const Ann = (term, type) => ({ tag: 'Ann', term, type });
 
-// todo type abstractions/applications
+// todo type applications
 
 const showTerm = term => {
   if (term.tag === 'Var') return term.name;
   if (term.tag === 'Abs') return `(\\${term.name} -> ${showTerm(term.body)})`;
+  if (term.tag === 'AbsT')
+    return `(/\\${term.name} -> (${showTerm(term.body)} : ${showType(term.type)}))`;
   if (term.tag === 'App') return `(${showTerm(term.left)} ${showTerm(term.right)})`;
+  if (term.tag === 'AppT') return `(${showTerm(term.left)} @${showType(term.right)})`;
   if (term.tag === 'Ann') return `(${showTerm(term.term)} : ${showType(term.type)})`;
 };
 
@@ -85,7 +90,10 @@ const JDone = { tag: 'JDone' };
 const JSubtype = (left, right) => ({ tag: 'JSubtype', left, right });
 const JCheck = (term, type) => ({ tag: 'JCheck', term, type });
 const JSynth = (term, result, cont) => ({ tag: 'JSynth', term, result, cont });
-const JSynthapp = (type, term, result, cont) => ({ tag: 'JSynthapp', type, term, result, cont });
+const JSynthapp = (type, term, result, cont) =>
+  ({ tag: 'JSynthapp', type, term, result, cont });
+const JSynthappT = (type1, type2, result, cont) =>
+  ({ tag: 'JSynthappT', type1, type2, result, cont });
 
 const showJudgment = judgment => {
   if (judgment.tag === 'JDone') return 'done';
@@ -95,6 +103,8 @@ const showJudgment = judgment => {
     return `${showTerm(judgment.term)} =>${showType(judgment.result)} (${showJudgment(judgment.cont)})`;
   if (judgment.tag === 'JSynthapp')
     return `${showType(judgment.type)} @ ${showTerm(judgment.term)} =>>${showType(judgment.result)} (${showJudgment(judgment.cont)})`;
+  if (judgment.tag === 'JSynthappT')
+    return `${showType(judgment.type1)} @${showType(judgment.type2)} =>>${showType(judgment.result)} (${showJudgment(judgment.cont)})`;
 };
 
 // elems (includes TVar, TMeta and judgments)
@@ -260,9 +270,17 @@ const step = wl => {
       result.type = TFun(a, b);
       return wl.push(a, b, cont, CVar(term.name, a), JCheck(term.body, b));
     }
+    if (term.tag === 'AbsT') {
+      result.type = TForall(term.name, term.type);
+      return wl.push(cont, TVar(term.name), JCheck(term.body, term.type));
+    }
     if (term.tag === 'App') {
       const result2 = freshTMeta();
       return wl.push(JSynth(term.left, result2, JSynthapp(result2, term.right, result, cont)));
+    }
+    if (term.tag === 'AppT') {
+      const result2 = freshTMeta();
+      return wl.push(JSynth(term.left, result2, JSynthappT(result2, term.right, result, cont)));
     }
   }
 
@@ -290,6 +308,16 @@ const step = wl => {
     terr(`cannot synthapp: ${showJudgment(top)}`);
   }
 
+  if (top.tag === 'JSynthappT') {
+    const { type1: type1_, type2, result, cont } = top;
+    const type1 = pruneTop(type1_);
+    if (type1.tag === 'TForall') {
+      result.type = openTForall(type1, type2);
+      return wl.push(cont);
+    }
+    terr(`cannot synthappT: ${showJudgment(top)}`);
+  }
+
   terr(`failed to step: ${showJudgment(top)} in ${showWorklist(wl)}`);
 };
 
@@ -309,9 +337,10 @@ const infer = term => {
 // testing
 const tv = TVar;
 
-const id = Abs('x', Abs('y', Var('x')));
+const tid = TForall('t', TFun(tv('t'), tv('t')));
+const id = App(AppT(AbsT('t', Abs('x', Var('x')), TFun(tv('t'), tv('t'))), tid), Abs('y', Var('y')));
 
-const term = Abs('x', Var('x'));
+const term = id;
 console.log(showTerm(term));
 const type = infer(term);
 console.log(showType(type));
