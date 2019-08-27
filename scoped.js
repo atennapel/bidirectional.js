@@ -18,10 +18,16 @@ const contains = (l, x) =>
   l.tag === 'Cons' ? l.head === x || contains(l.tail, x) : false;
 
 const subset = (a, b) =>
-  a.tag === 'Cons' ? (contains(a.head, b) ? subset(a.tail, b) : false) : true;
+  a.tag === 'Cons' ? (contains(b, a.head) ? subset(a.tail, b) : false) : true;
 
 const lookup = (l, x) =>
   l.tag === 'Cons' ? (l.head[0] === x ? l.head[1] : lookup(l.tail, x)) : null;
+
+const fromArray = a => {
+  let l = Nil;
+  for (let i = a.length - 1; i >= 0; i--) l = Cons(a[i], l);
+  return l;
+};
 
 // terms
 const Var = name => ({ tag: 'Var', name });
@@ -120,17 +126,13 @@ const subtypeTMeta = (m, t) => {
 const subtype = (tvs, a, b) => {
   console.log(`subtype ${showType(a)} <: ${showType(b)}`);
   if (a.tag === 'TVar' && b.tag === 'TVar' && a.name === b.name) return;
-  if (a.tag === 'TMeta') {
-    if (a.type) return subtype(tvs, a.type, b);
-    return subtypeTMeta(a, b);
-  }
-  if (b.tag === 'TMeta') {
-    if (b.type) return subtype(tvs, a, b.type);
-    return subtypeTMeta(b, a);
-  }
   if (a.tag === 'TFun' && b.tag === 'TFun') {
     subtype(tvs, b.left, a.left);
     subtype(tvs, a.right, b.right);
+    return;
+  }
+  if (b.tag === 'TForall') {
+    subtype(Cons(b.name, tvs), a, b.body);
     return;
   }
   if (a.tag === 'TForall') {
@@ -138,9 +140,13 @@ const subtype = (tvs, a, b) => {
     subtype(tvs, openTForall(a, m), b);
     return;
   }
-  if (b.tag === 'TForall') {
-    subtype(Cons(b.name, tvs), a, b.body);
-    return;
+  if (a.tag === 'TMeta') {
+    if (a.type) return subtype(tvs, a.type, b);
+    return subtypeTMeta(a, b);
+  }
+  if (b.tag === 'TMeta') {
+    if (b.type) return subtype(tvs, a, b.type);
+    return subtypeTMeta(b, a);
   }
   return terr(`failed ${showType(a)} <: ${showType(b)}`);
 };
@@ -196,7 +202,6 @@ const synthapp = (env, tvs, ty, t) => {
   }
   if (ty.tag === 'TMeta') {
     if (ty.type) return synthapp(env, tvs, ty.type, t);
-    // TODO: do I need to use tvs or ty.tvs?
     const a = freshTMeta(ty.tvs);
     const b = freshTMeta(ty.tvs);
     ty.type = TFun(a, b);
@@ -217,9 +222,11 @@ const v = Var;
 const tv = TVar;
 const tid = TForall('t', TFun(tv('t'), tv('t')));
 
-const env = Nil;
+const env = fromArray([
+  ['id', tid],
+]);
 
-const term = Ann(Ann(Abs('x', v('x')), tid), tid);
+const term = App(Ann(Abs('x', v('x')), TFun(tid, tid)), Abs('x', v('x')));
 console.log(showTerm(term));
 const ty = infer(env, term);
 console.log(showType(ty));

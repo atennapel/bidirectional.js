@@ -4,3 +4,5 @@ Javascript and Typescript implementations of "Complete and Easy Bidirectional Ty
 This is an almost direct translation of https://github.com/ollef/Bidirectional
 
 See `ts-mutable` for the most up-to-date implementation.
+
+See `scoped.js` for a minimal implementation of type inference for predicative System F.
