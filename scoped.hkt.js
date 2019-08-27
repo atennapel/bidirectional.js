@@ -46,6 +46,7 @@ const showTerm = t => {
 const TVar = name => ({ tag: 'TVar', name });
 const TForall = (name, body) => ({ tag: 'TForall', name, body });
 const TFun = (left, right) => ({ tag: 'TFun', left, right });
+const TApp = (left, right) => ({ tag: 'TApp', left, right });
 const TMeta = (id, tvs) => ({ tag: 'TMeta', id, tvs, type: null });
 
 let _tmetaid = 0;
@@ -57,11 +58,13 @@ const showType = t => {
   if (t.tag === 'TMeta') return `?${t.id}${showList(t.tvs)}${t.type ? `{${showType(t.type)}}` : ''}`;
   if (t.tag === 'TForall') return `(forall ${t.name}. ${showType(t.body)})`;
   if (t.tag === 'TFun') return `(${showType(t.left)} -> ${showType(t.right)})`;
+  if (t.tag === 'TApp') return `(${showType(t.left)} ${showType(t.right)})`;
 };
 
 const prune = t => {
   if (t.tag === 'TMeta') return t.type ? t.type = prune(t.type) : t;
   if (t.tag === 'TFun') return TFun(prune(t.left), prune(t.right));
+  if (t.tag === 'TApp') return TApp(prune(t.left), prune(t.right));
   if (t.tag === 'TForall') return TForall(t.name, prune(t.body));
   return t;
 };
@@ -71,6 +74,8 @@ const substTVar = (x, s, t) => {
   if (t.tag === 'TMeta' && t.type) return substTVar(x, s, t.type);
   if (t.tag === 'TFun')
     return TFun(substTVar(x, s, t.left), substTVar(x, s, t.right));
+  if (t.tag === 'TApp')
+    return TApp(substTVar(x, s, t.left), substTVar(x, s, t.right));
   if (t.tag === 'TForall')
     return t.name === x ? t : TForall(t.name, substTVar(x, s, t.body));
   return t;
@@ -82,6 +87,8 @@ const containsTMeta = (t, m) => {
   if (t.tag === 'TMeta' && t.type) return containsTMeta(t.type, m);
   if (t.tag === 'TFun')
     return containsTMeta(t.left, m) || containsTMeta(t.right, m);
+  if (t.tag === 'TApp')
+    return containsTMeta(t.left, m) || containsTMeta(t.right, m);
   if (t.tag === 'TForall') return containsTMeta(t.body, m);
   return false;
 };
@@ -89,6 +96,11 @@ const containsTMeta = (t, m) => {
 const freetvsR = (t, m) => {
   if (t.tag === 'TVar') return m[t.name] = true;
   if (t.tag === 'TFun') {
+    freetvsR(t.left, m);
+    freetvsR(t.right, m);
+    return;
+  }
+  if (t.tag === 'TApp') {
     freetvsR(t.left, m);
     freetvsR(t.right, m);
     return;
@@ -118,6 +130,14 @@ const subtypeTMeta = (tvs, m, t, left) => {
     left ? subtype(tvs, ty, t) : subtype(tvs, t, ty);
     return;
   }
+  if (t.tag === 'TApp') {
+    const a = freshTMeta(m.tvs);
+    const b = freshTMeta(m.tvs);
+    const ty = TApp(a, b);
+    m.type = ty;
+    left ? subtype(tvs, ty, t) : subtype(tvs, t, ty);
+    return;
+  }
   if (t.tag === 'TMeta') {
     if (m === t) return;
     if (t.type) return subtypeTMeta(tvs, m, t.type, left);
@@ -137,6 +157,13 @@ const subtype = (tvs, a, b) => {
   if (a.tag === 'TFun' && b.tag === 'TFun') {
     subtype(tvs, b.left, a.left);
     subtype(tvs, a.right, b.right);
+    return;
+  }
+  if (a.tag === 'TApp' && b.tag === 'TApp') {
+    subtype(tvs, a.left, b.left);
+    subtype(tvs, b.left, a.left);
+    subtype(tvs, a.right, b.right);
+    subtype(tvs, b.right, a.right);
     return;
   }
   if (b.tag === 'TForall') {
@@ -219,9 +246,9 @@ const synthapp = (env, tvs, ty, t) => {
   return terr(`cannot synthapp ${showType(ty)} @ ${showTerm(t)}`);
 };
 
-const infer = (env, t) => {
+const infer = (env, tvs, t) => {
   resetTMetaId();
-  const ty = synth(env, Nil, t);
+  const ty = synth(env, tvs, t);
   return prune(ty);
 };
 
@@ -232,9 +259,14 @@ const tid = TForall('t', TFun(tv('t'), tv('t')));
 
 const env = fromArray([
   ['id', tid],
+  ['single', TForall('t', TFun(tv('t'), TApp(tv('List'), tv('t'))))],
+  ['ids', TApp(tv('List'), tid)],
+  ['rcons', TForall('t', TFun(TApp(tv('List'), tv('t')), TFun(tv('t'), TApp(tv('List'), tv('t')))))],
+  ['cons', TForall('t', TFun(tv('t'), TFun(TApp(tv('List'), tv('t')), tv('t'))))],
 ]);
+const tvs = fromArray(['List']);
 
-const term = App(Ann(Abs('x', v('x')), TFun(tid, tid)), Abs('x', v('x')));
+const term = App(v('rcons'), v('ids'));
 console.log(showTerm(term));
-const ty = infer(env, term);
+const ty = infer(env, tvs, term);
 console.log(showType(ty));
