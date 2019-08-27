@@ -32,14 +32,20 @@ const fromArray = a => {
 // terms
 const Var = name => ({ tag: 'Var', name });
 const Abs = (name, body) => ({ tag: 'Abs', name, body });
+const AbsAnn = (name, type, body) => ({ tag: 'Abs', name, type, body });
 const App = (left, right) => ({ tag: 'App', left, right });
 const Ann = (term, type) => ({ tag: 'Ann', term, type });
+const AbsT = (name, body) => ({ tag: 'AbsT', name, body });
+const AppT = (left, right) => ({ tag: 'AppT', left, right });
 
 const showTerm = t => {
   if (t.tag === 'Var') return t.name;
   if (t.tag === 'Abs') return `(\\${t.name}. ${showTerm(t.body)})`;
+  if (t.tag === 'AbsAnn') return `(\\(${t.name} : ${showType(t.type)}). ${showTerm(t.body)})`;
   if (t.tag === 'App') return `(${showTerm(t.left)} ${showTerm(t.right)})`;
   if (t.tag === 'Ann') return `(${showTerm(t.term)} : ${showType(t.type)})`;
+  if (t.tag === 'AbsT') return `(/\\${t.name}. ${showTerm(t.body)})`;
+  if (t.tag === 'AppT') return `(${showTerm(t.left)} @(${showType(t.right)}))`;
 };
 
 // types
@@ -208,6 +214,23 @@ const synth = (env, tvs, t) => {
     check(Cons([t.name, a], env), tvs, t.body, b);
     return TFun(a, b);
   }
+  if (t.tag === 'AbsAnn') {
+    const b = freshTMeta(tvs);
+    check(Cons([t.name, t.type], env), tvs, t.body, b);
+    return TFun(t.type, b);
+  }
+  if (t.tag === 'AbsT') {
+    const ntvs = Cons(t.name, tvs);
+    const b = freshTMeta(ntvs);
+    check(env, ntvs, t.body, b);
+    return TForall(t.name, b);
+  }
+  if (t.tag === 'AppT') {
+    const f = prune(synth(env, tvs, t.left));
+    if (f.tag !== 'TForall')
+      return terr(`not a forall in ${showTerm(t)} but ${showType(f)}`);
+    return openTForall(f, t.right);
+  }
   return terr(`cannot synth ${showTerm(t)}`);
 };
 
@@ -262,11 +285,11 @@ const env = fromArray([
   ['single', TForall('t', TFun(tv('t'), TApp(tv('List'), tv('t'))))],
   ['ids', TApp(tv('List'), tid)],
   ['rcons', TForall('t', TFun(TApp(tv('List'), tv('t')), TFun(tv('t'), TApp(tv('List'), tv('t')))))],
-  ['cons', TForall('t', TFun(tv('t'), TFun(TApp(tv('List'), tv('t')), tv('t'))))],
+  ['cons', TForall('t', TFun(tv('t'), TFun(TApp(tv('List'), tv('t')), TApp(tv('List'), tv('t')))))],
 ]);
 const tvs = fromArray(['List']);
 
-const term = App(v('rcons'), v('ids'));
+const term = Abs('x', Abs('y', v('x')));
 console.log(showTerm(term));
 const ty = infer(env, tvs, term);
 console.log(showType(ty));
