@@ -54,14 +54,20 @@ const TForall = (name, body) => ({ tag: 'TForall', name, body });
 const TFun = (left, right) => ({ tag: 'TFun', left, right });
 const TApp = (left, right) => ({ tag: 'TApp', left, right });
 const TMeta = (id, tvs) => ({ tag: 'TMeta', id, tvs, type: null });
+const TSkol = id => ({ tag: 'TSkol', id });
 
 let _tmetaid = 0;
 const resetTMetaId = () => { _tmetaid = 0 };
 const freshTMeta = tvs => TMeta(_tmetaid++, tvs);
 
+let _tskolid = 0;
+const resetTSkolId = () => { _tskolid = 0 };
+const freshTSkol = () => TSkol(_tskolid++);
+
 const showType = t => {
   if (t.tag === 'TVar') return t.name;
   if (t.tag === 'TMeta') return `?${t.id}${showList(t.tvs)}${t.type ? `{${showType(t.type)}}` : ''}`;
+  if (t.tag === 'TSkol') return `'${t.id}`;
   if (t.tag === 'TForall') return `(forall ${t.name}. ${showType(t.body)})`;
   if (t.tag === 'TFun') return `(${showType(t.left)} -> ${showType(t.right)})`;
   if (t.tag === 'TApp') return `(${showType(t.left)} ${showType(t.right)})`;
@@ -99,36 +105,12 @@ const containsTMeta = (t, m) => {
   return false;
 };
 
-const freetvsR = (t, m) => {
-  if (t.tag === 'TVar') return m[t.name] = true;
-  if (t.tag === 'TFun') {
-    freetvsR(t.left, m);
-    freetvsR(t.right, m);
-    return;
-  }
-  if (t.tag === 'TApp') {
-    freetvsR(t.left, m);
-    freetvsR(t.right, m);
-    return;
-  }
-  if (t.tag === 'TForall') {
-    freetvsR(t.body, m);
-    m[t.name] = false;
-    return;
-  }
-};
-const freetvs = t => {
-  const m = {};
-  freetvsR(t, m);
-  let l = Nil;
-  for (let k in m) if (m[k]) l = Cons(k, l);
-  return l;
-};
-
 // subtyping
 const subtypeTMeta = (tvs, m, t, left) => {
   console.log(`subtypeTMeta ${showType(m)} := ${showType(t)}`);
   if (t.tag === 'TFun') {
+    if (containsTMeta(t, m))
+      return terr(`occurs failed: ${showType(m)} := ${showType(t)}`);
     const a = freshTMeta(m.tvs);
     const b = freshTMeta(m.tvs);
     const ty = TFun(a, b);
@@ -137,6 +119,8 @@ const subtypeTMeta = (tvs, m, t, left) => {
     return;
   }
   if (t.tag === 'TApp') {
+    if (containsTMeta(t, m))
+      return terr(`occurs failed: ${showType(m)} := ${showType(t)}`);
     const a = freshTMeta(m.tvs);
     const b = freshTMeta(m.tvs);
     const ty = TApp(a, b);
@@ -149,16 +133,21 @@ const subtypeTMeta = (tvs, m, t, left) => {
     if (t.type) return subtypeTMeta(tvs, m, t.type, left);
     if (!subset(m.tvs, t.tvs))
       return terr(`subset failed: ${showType(m)} := ${showType(t)}`);
+    m.type = t;
+    return;
   }
-  if (containsTMeta(t, m))
-    return terr(`occurs failed: ${showType(m)} := ${showType(t)}`);
-  if (!subset(freetvs(t), m.tvs))
-    return terr(`out of scope tvar: ${showType(m)} := ${showType(t)}`);
-  m.type = t;
+  if (t.tag === 'TSkol') {
+    if (!contains(m.tvs, t.id))
+      return terr(`tvar out of scope: ${showType(m)} := ${showType(t)}`);
+    m.type = t;
+    return;
+  }
+  return terr(`subtype unexpected type: ${showType(m)} := ${showType(t)}`);
 };
 
 const subtype = (tvs, a, b) => {
   console.log(`subtype ${showType(a)} <: ${showType(b)}`);
+  if (a === b) return;
   if (a.tag === 'TVar' && b.tag === 'TVar' && a.name === b.name) return;
   if (a.tag === 'TFun' && b.tag === 'TFun') {
     subtype(tvs, b.left, a.left);
@@ -173,7 +162,8 @@ const subtype = (tvs, a, b) => {
     return;
   }
   if (b.tag === 'TForall') {
-    subtype(Cons(b.name, tvs), a, b.body);
+    const sk = freshTSkol();
+    subtype(Cons(sk.id, tvs), a, openTForall(b, sk));
     return;
   }
   if (a.tag === 'TForall') {
@@ -237,7 +227,8 @@ const synth = (env, tvs, t) => {
 const check = (env, tvs, t, ty) => {
   console.log(`check ${showTerm(t)} : ${showType(ty)}`);
   if (ty.tag === 'TForall') {
-    check(env, Cons(ty.name, tvs), t, ty.body);
+    const sk = freshTSkol();
+    check(env, Cons(sk.id, tvs), t, openTForall(ty, sk));
     return;
   }
   if (t.tag === 'Abs' && ty.tag === 'TFun') {
@@ -271,6 +262,7 @@ const synthapp = (env, tvs, ty, t) => {
 
 const infer = (env, tvs, t) => {
   resetTMetaId();
+  resetTSkolId();
   const ty = synth(env, tvs, t);
   return prune(ty);
 };
