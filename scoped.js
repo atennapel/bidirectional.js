@@ -1,3 +1,8 @@
+/**
+ * Minimal implementation of type inference for predicative System F
+ * This algorithm should function the same as the algorithm from
+ * "Complete and easy bidirectional typechecking for higher-rank polymorphism"
+ */
 // util
 const terr = msg => { throw new TypeError(msg) };
 
@@ -38,8 +43,10 @@ const Ann = (term, type) => ({ tag: 'Ann', term, type });
 const showTerm = t => {
   if (t.tag === 'Var') return t.name;
   if (t.tag === 'Abs') return `(\\${t.name}. ${showTerm(t.body)})`;
-  if (t.tag === 'App') return `(${showTerm(t.left)} ${showTerm(t.right)})`;
-  if (t.tag === 'Ann') return `(${showTerm(t.term)} : ${showType(t.type)})`;
+  if (t.tag === 'App')
+    return `(${showTerm(t.left)} ${showTerm(t.right)})`;
+  if (t.tag === 'Ann')
+    return `(${showTerm(t.term)} : ${showType(t.type)})`;
 };
 
 // types
@@ -59,10 +66,13 @@ const freshTSkol = () => TSkol(_tskolid++);
 
 const showType = t => {
   if (t.tag === 'TVar') return t.name;
-  if (t.tag === 'TMeta') return `?${t.id}${showList(t.tvs)}${t.type ? `{${showType(t.type)}}` : ''}`;
+  if (t.tag === 'TMeta')
+    return `?${t.id}${showList(t.tvs)}${t.type ? `{${showType(t.type)}}` : ''}`;
   if (t.tag === 'TSkol') return `'${t.id}`;
-  if (t.tag === 'TForall') return `(forall ${t.name}. ${showType(t.body)})`;
-  if (t.tag === 'TFun') return `(${showType(t.left)} -> ${showType(t.right)})`;
+  if (t.tag === 'TForall')
+    return `(forall ${t.name}. ${showType(t.body)})`;
+  if (t.tag === 'TFun')
+    return `(${showType(t.left)} -> ${showType(t.right)})`;
 };
 
 const prune = t => {
@@ -179,6 +189,7 @@ const synth = (env, tvs, t) => {
 
 const check = (env, tvs, t, ty) => {
   console.log(`check ${showTerm(t)} : ${showType(ty)}`);
+  if (ty.tag === 'TMeta' && ty.type) return check(env, tvs, t, ty.type);
   if (ty.tag === 'TForall') {
     const sk = freshTSkol();
     check(env, Cons(sk.id, tvs), t, openTForall(ty, sk));
@@ -229,7 +240,7 @@ const env = fromArray([
   ['id', tid],
 ]);
 
-const term = Ann(App(Abs('x', Abs('y', v('x'))), Abs('x', v('x'))), TForall('r', TFun(tv('r'), tid)));
+const term = Ann(App(Abs('x', Abs('y', v('x'))), Abs('x', v('x'))), TForall('a', TForall('b', TFun(tv('a'), TFun(tv('b'), tv('b'))))));
 console.log(showTerm(term));
 const ty = infer(env, term);
 console.log(showType(ty));
