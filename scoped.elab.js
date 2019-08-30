@@ -1,3 +1,8 @@
+/**
+ * Minimal implementation of type inference for predicative System F
+ * This algorithm should function the same as the algorithm from
+ * "Complete and easy bidirectional typechecking for higher-rank polymorphism"
+ */
 // util
 const terr = msg => { throw new TypeError(msg) };
 
@@ -53,11 +58,24 @@ const showTerm = t => {
     return `(${showTerm(t.left)} @(${showType(t.right)}))`;
 };
 
+const pruneInTerm = (t, map = {}) => {
+  if (t.tag === 'Abs') return Abs(t.name, pruneInTerm(t.body, map));
+  if (t.tag === 'AbsAnn')
+    return AbsAnn(t.name, prune(t.type, map), pruneInTerm(t.body, map));
+  if (t.tag === 'App')
+    return App(pruneInTerm(t.left, map), pruneInTerm(t.right, map));
+  if (t.tag === 'Ann')
+    return Ann(pruneInTerm(t.term, map), prune(t.type, map));
+  if (t.tag === 'AbsT') return AbsT(t.name, pruneInTerm(t.body, map));
+  if (t.tag === 'AppT')
+    return AppT(pruneInTerm(t.left, map), prune(t.right, map));
+  return t;
+};
+
 // types
 const TVar = name => ({ tag: 'TVar', name });
 const TForall = (name, body) => ({ tag: 'TForall', name, body });
 const TFun = (left, right) => ({ tag: 'TFun', left, right });
-const TApp = (left, right) => ({ tag: 'TApp', left, right });
 const TMeta = (id, tvs) => ({ tag: 'TMeta', id, tvs, type: null });
 const TSkol = id => ({ tag: 'TSkol', id });
 
@@ -78,15 +96,14 @@ const showType = t => {
     return `(forall ${t.name}. ${showType(t.body)})`;
   if (t.tag === 'TFun')
     return `(${showType(t.left)} -> ${showType(t.right)})`;
-  if (t.tag === 'TApp')
-    return `(${showType(t.left)} ${showType(t.right)})`;
 };
 
-const prune = t => {
-  if (t.tag === 'TMeta') return t.type ? t.type = prune(t.type) : t;
-  if (t.tag === 'TFun') return TFun(prune(t.left), prune(t.right));
-  if (t.tag === 'TApp') return TApp(prune(t.left), prune(t.right));
-  if (t.tag === 'TForall') return TForall(t.name, prune(t.body));
+const prune = (t, map = {}) => {
+  if (t.tag === 'TMeta') return t.type ? t.type = prune(t.type, map) : t;
+  if (t.tag === 'TFun')
+    return TFun(prune(t.left, map), prune(t.right, map));
+  if (t.tag === 'TForall') return TForall(t.name, prune(t.body, map));
+  if (t.tag === 'TSkol') return map[t.id] ? TVar(map[t.id]) : t;
   return t;
 };
 
@@ -95,8 +112,6 @@ const substTVar = (x, s, t) => {
   if (t.tag === 'TMeta' && t.type) return substTVar(x, s, t.type);
   if (t.tag === 'TFun')
     return TFun(substTVar(x, s, t.left), substTVar(x, s, t.right));
-  if (t.tag === 'TApp')
-    return TApp(substTVar(x, s, t.left), substTVar(x, s, t.right));
   if (t.tag === 'TForall')
     return t.name === x ? t : TForall(t.name, substTVar(x, s, t.body));
   return t;
@@ -108,14 +123,12 @@ const containsTMeta = (t, m) => {
   if (t.tag === 'TMeta' && t.type) return containsTMeta(t.type, m);
   if (t.tag === 'TFun')
     return containsTMeta(t.left, m) || containsTMeta(t.right, m);
-  if (t.tag === 'TApp')
-    return containsTMeta(t.left, m) || containsTMeta(t.right, m);
   if (t.tag === 'TForall') return containsTMeta(t.body, m);
   return false;
 };
 
 // subtyping
-const subtypeTMeta = (tvs, m, t, left) => {
+const subtypeTMeta = (tvs, m, t, left, term) => {
   console.log(`subtypeTMeta ${showType(m)} := ${showType(t)}`);
   if (t.tag === 'TFun') {
     if (containsTMeta(t, m))
@@ -124,111 +137,106 @@ const subtypeTMeta = (tvs, m, t, left) => {
     const b = freshTMeta(m.tvs);
     const ty = TFun(a, b);
     m.type = ty;
-    left ? subtype(tvs, ty, t) : subtype(tvs, t, ty);
-    return;
-  }
-  if (t.tag === 'TApp') {
-    if (containsTMeta(t, m))
-      return terr(`occurs failed: ${showType(m)} := ${showType(t)}`);
-    const a = freshTMeta(m.tvs);
-    const b = freshTMeta(m.tvs);
-    const ty = TApp(a, b);
-    m.type = ty;
-    left ? subtype(tvs, ty, t) : subtype(tvs, t, ty);
-    return;
+    return left ? subtype(tvs, ty, t, term) : subtype(tvs, t, ty, term);
   }
   if (t.tag === 'TMeta') {
     if (m === t) return;
-    if (t.type) return subtypeTMeta(tvs, m, t.type, left);
+    if (t.type) return subtypeTMeta(tvs, m, t.type, left, term);
     if (!subset(m.tvs, t.tvs))
       return terr(`subset failed: ${showType(m)} := ${showType(t)}`);
     m.type = t;
-    return;
+    return term;
   }
   if (t.tag === 'TSkol') {
     if (!contains(m.tvs, t.id))
       return terr(`tvar out of scope: ${showType(m)} := ${showType(t)}`);
     m.type = t;
-    return;
+    return term;
+  }
+  if (t.tag === 'TVar') {
+    m.type = t;
+    return term;
   }
   return terr(`subtype unexpected type: ${showType(m)} := ${showType(t)}`);
 };
 
-const subtype = (tvs, a, b) => {
+const subtype = (tvs, a, b, term) => {
   console.log(`subtype ${showType(a)} <: ${showType(b)}`);
-  if (a === b) return;
-  if (a.tag === 'TVar' && b.tag === 'TVar' && a.name === b.name) return;
+  if (a === b) return term;
+  if (a.tag === 'TVar' && b.tag === 'TVar' && a.name === b.name)
+    return term;
   if (a.tag === 'TFun' && b.tag === 'TFun') {
-    subtype(tvs, b.left, a.left);
-    subtype(tvs, a.right, b.right);
-    return;
-  }
-  if (a.tag === 'TApp' && b.tag === 'TApp') {
-    subtype(tvs, a.left, b.left);
-    subtype(tvs, b.left, a.left);
-    subtype(tvs, a.right, b.right);
-    subtype(tvs, b.right, a.right);
-    return;
+    const term1 = subtype(tvs, b.left, a.left, term);
+    const term2 = subtype(tvs, a.right, b.right, term1);
+    return term2;
   }
   if (b.tag === 'TForall') {
     const sk = freshTSkol();
-    subtype(Cons(sk.id, tvs), a, openTForall(b, sk));
-    return;
+    skolmap[sk.id] = b.name;
+    const body = subtype(Cons(sk.id, tvs), a, openTForall(b, sk), term);
+    return AbsT(b.name, body);
   }
   if (a.tag === 'TForall') {
     const m = freshTMeta(tvs);
-    subtype(tvs, openTForall(a, m), b);
-    return;
+    const body = subtype(tvs, openTForall(a, m), b, term);
+    return AppT(body, m);
   }
   if (a.tag === 'TMeta') {
-    if (a.type) return subtype(tvs, a.type, b);
-    return subtypeTMeta(tvs, a, b, true);
+    if (a.type) return subtype(tvs, a.type, b, term);
+    return subtypeTMeta(tvs, a, b, true, term);
   }
   if (b.tag === 'TMeta') {
-    if (b.type) return subtype(tvs, a, b.type);
-    return subtypeTMeta(tvs, b, a, false);
+    if (b.type) return subtype(tvs, a, b.type, term);
+    return subtypeTMeta(tvs, b, a, false, term);
   }
   return terr(`failed ${showType(a)} <: ${showType(b)}`);
 };
 
 // inference
+let _varid = 0;
+const resetVarId = () => { _varid = 0 };
+const freshVar = () => Var(_varid++);
+
+let skolmap = {};
+
 const synth = (env, tvs, t) => {
   console.log(`synth ${showTerm(t)}`);
   if (t.tag === 'Var') {
     const ty = lookup(env, t.name);
     if (!t) return terr(`undefined var ${t.name}`);
-    return ty;
+    return [ty, t];
   }
   if (t.tag === 'Ann') {
-    check(env, tvs, t.term, t.type);
-    return t.type;
+    const term = check(env, tvs, t.term, t.type);
+    return [t.type, term];
   }
   if (t.tag === 'App') {
-    const ty = synth(env, tvs, t.left);
-    return synthapp(env, tvs, ty, t.right);
+    const [ty, left] = synth(env, tvs, t.left);
+    return synthapp(env, tvs, ty, t.right, left);
   }
   if (t.tag === 'Abs') {
     const a = freshTMeta(tvs);
     const b = freshTMeta(tvs);
-    check(Cons([t.name, a], env), tvs, t.body, b);
-    return TFun(a, b);
+    const body = check(Cons([t.name, a], env), tvs, t.body, b);
+    return [TFun(a, b), AbsAnn(t.name, a, body)];
   }
   if (t.tag === 'AbsAnn') {
     const b = freshTMeta(tvs);
-    check(Cons([t.name, t.type], env), tvs, t.body, b);
-    return TFun(t.type, b);
+    const body = check(Cons([t.name, t.type], env), tvs, t.body, b);
+    return [TFun(t.type, b), AbsAnn(t.name, t.type, body)];
   }
   if (t.tag === 'AbsT') {
     const ntvs = Cons(t.name, tvs);
     const b = freshTMeta(ntvs);
-    check(env, ntvs, t.body, b);
-    return TForall(t.name, b);
+    const body = check(env, ntvs, t.body, b);
+    return [TForall(t.name, b), AbsT(t.name, body)];
   }
   if (t.tag === 'AppT') {
-    const f = prune(synth(env, tvs, t.left));
+    const [ty, left] = synth(env, tvs, t.left);
+    const f = prune(ty);
     if (f.tag !== 'TForall')
       return terr(`not a forall in ${showTerm(t)} but ${showType(f)}`);
-    return openTForall(f, t.right);
+    return [openTForall(f, t.right), AppT(left, t.right)];
   }
   return terr(`cannot synth ${showTerm(t)}`);
 };
@@ -238,43 +246,47 @@ const check = (env, tvs, t, ty) => {
   if (ty.tag === 'TMeta' && ty.type) return check(env, tvs, t, ty.type);
   if (ty.tag === 'TForall') {
     const sk = freshTSkol();
-    check(env, Cons(sk.id, tvs), t, openTForall(ty, sk));
-    return;
+    skolmap[sk.id] = ty.name;
+    const rest = check(env, Cons(sk.id, tvs), t, openTForall(ty, sk));
+    return AbsT(ty.name, rest);
   }
   if (t.tag === 'Abs' && ty.tag === 'TFun') {
-    check(Cons([t.name, ty.left], env), tvs, t.body, ty.right);
-    return;
+    const body = check(Cons([t.name, ty.left], env), tvs, t.body, ty.right);
+    return AbsAnn(t.name, ty.left, body);
   }
-  const inf = synth(env, tvs, t);
-  subtype(tvs, inf, ty);
+  const [inf, elab] = synth(env, tvs, t);
+  const elab1 = subtype(tvs, inf, ty, elab);
+  return elab1;
 };
 
-const synthapp = (env, tvs, ty, t) => {
+const synthapp = (env, tvs, ty, t, app) => {
   console.log(`synthapp ${showType(ty)} @ ${showTerm(t)}`);
   if (ty.tag === 'TForall') {
     const m = freshTMeta(tvs);
-    return synthapp(env, tvs, openTForall(ty, m), t);
+    return synthapp(env, tvs, openTForall(ty, m), t, AppT(app, m));
   }
   if (ty.tag === 'TFun') {
-    check(env, tvs, t, ty.left);
-    return ty.right;
+    const arg = check(env, tvs, t, ty.left);
+    return [ty.right, App(app, arg)];
   }
   if (ty.tag === 'TMeta') {
-    if (ty.type) return synthapp(env, tvs, ty.type, t);
+    if (ty.type) return synthapp(env, tvs, ty.type, t, app);
     const a = freshTMeta(ty.tvs);
     const b = freshTMeta(ty.tvs);
     ty.type = TFun(a, b);
-    check(env, tvs, t, a);
-    return b;
+    const arg = check(env, tvs, t, a);
+    return [b, App(app, arg)];
   }
   return terr(`cannot synthapp ${showType(ty)} @ ${showTerm(t)}`);
 };
 
-const infer = (env, tvs, t) => {
+const infer = (env, t) => {
   resetTMetaId();
   resetTSkolId();
-  const ty = synth(env, tvs, t);
-  return prune(ty);
+  resetVarId();
+  skolmap = {};
+  const [ty, term] = synth(env, Nil, t);
+  return [prune(ty), pruneInTerm(term, skolmap)];
 };
 
 // testing
@@ -284,14 +296,12 @@ const tid = TForall('t', TFun(tv('t'), tv('t')));
 
 const env = fromArray([
   ['id', tid],
-  ['single', TForall('t', TFun(tv('t'), TApp(tv('List'), tv('t'))))],
-  ['ids', TApp(tv('List'), tid)],
-  ['rcons', TForall('t', TFun(TApp(tv('List'), tv('t')), TFun(tv('t'), TApp(tv('List'), tv('t')))))],
-  ['cons', TForall('t', TFun(tv('t'), TFun(TApp(tv('List'), tv('t')), TApp(tv('List'), tv('t')))))],
+  ['Z', tv('Int')],
+  ['add', TFun(tv('Int'), TFun(tv('Int'), tv('Int')))],
 ]);
-const tvs = fromArray(['List']);
 
-const term = Abs('x', Abs('y', v('x')));
+const term = Ann(Abs('x', Abs('y', v('x'))), TForall('t', TFun(tv('t'), TForall('r', TFun(tv('r'), tv('t'))))));
 console.log(showTerm(term));
-const ty = infer(env, tvs, term);
+const [ty, term1] = infer(env, term);
 console.log(showType(ty));
+console.log(showTerm(term1));
