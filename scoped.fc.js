@@ -44,6 +44,15 @@ const showTerm = t => {
     return `(${showTerm(t.term)} : ${showType(t.type)})`;
 };
 
+const flattenApp = t => {
+  const args = [];
+  while (t.tag === 'App') {
+    args.push(t.right);
+    t = t.left;
+  }
+  return [t, args.reverse()];
+};
+
 // types
 const TVar = name => ({ tag: 'TVar', name });
 const TForall = (name, body) => ({ tag: 'TForall', name, body });
@@ -147,6 +156,7 @@ const unify = (tvs, a, b) => {
   return terr(`failed ${showType(a)} ~ ${showType(b)}`);
 };
 const subsume = (tvs, a, b) => {
+  console.log(`subsume ${showType(a)} <: ${showType(b)}`);
   if (b.tag === 'TForall') {
     const sk = freshTSkol();
     return unify(Cons(sk.id, tvs), a, openTForall(b, sk));
@@ -171,8 +181,9 @@ const synth = (env, tvs, t) => {
     return t.type;
   }
   if (t.tag === 'App') {
-    const ty = synth(env, tvs, t.left);
-    return synthapp(env, tvs, ty, t.right);
+    const [f, as] = flattenApp(t);
+    const ty = synth(env, tvs, f);
+    return synthapps(env, tvs, ty, as);
   }
   if (t.tag === 'Abs') {
     const a = freshTMeta(tvs, true);
@@ -196,35 +207,54 @@ const check = (env, tvs, t, ty) => {
     return;
   }
   if (t.tag === 'App') {
-    const fty = synth(env, tvs, t.left);
-    return synthapp(env, tvs, fty, t.right, ty);
+    const [f, as] = flattenApp(t);
+    const fty = synth(env, tvs, f);
+    return synthapps(env, tvs, fty, as, ty);
   }
   const inf = synth(env, tvs, t);
   subsume(tvs, inf, ty);
 };
 
-const synthapp = (env, tvs, ty, t, ety) => {
-  console.log(`synthapp ${showType(ty)} @ ${showTerm(t)}${ety ? ` : ${showType(ety)}` : ''}`);
-  // TOOD: N-ary applications
+const synthapps = (env, tvs, ty, as, ety, acc = []) => {
+  console.log(`synthapps ${showType(ty)} @ [${as.map(showTerm).join(', ')}][${acc.map(([t, ty]) => `${showTerm(t)} : ${showType(ty)}`).join(', ')}]${ety ? ` : ${showType(ety)}` : ''}`);
   if (ty.tag === 'TForall') {
     const m = freshTMeta(tvs);
-    return synthapp(env, tvs, openTForall(ty, m), t, ety);
+    return synthapps(env, tvs, openTForall(ty, m), as, ety, acc);
   }
-  if (ty.tag === 'TFun') {
-    if (ety) unify(tvs, ty.right, ety);
-    check(env, tvs, t, ty.left);
-    return ty.right;
+  if (as.length > 0) {
+    if (ty.tag === 'TFun') {
+      const tm = as.shift();
+      acc.push([tm, ty.left]);
+      return synthapps(env, tvs, ty.right, as, ety, acc);
+    }
+    if (ty.tag === 'TMeta') {
+      if (ty.type) return synthapps(env, tvs, ty.type, as, ety, acc);
+      const a = freshTMeta(ty.tvs);
+      const b = freshTMeta(ty.tvs);
+      ty.type = TFun(a, b);
+      const tm = as.shift();
+      acc.push([tm, a]);
+      return synthapps(env, tvs, b, as, ety, acc);
+    }
+    // TODO: handle incomplete application
+    return terr(`synthapps fail`);
   }
-  if (ty.tag === 'TMeta') {
-    if (ty.type) return synthapp(env, tvs, ty.type, t, ety);
-    const a = freshTMeta(ty.tvs);
-    const b = freshTMeta(ty.tvs);
-    ty.type = TFun(a, b);
-    if (ety) unify(tvs, b, ety);
-    check(env, tvs, t, a);
-    return b;
+  if (ety) unify(tvs, ty, ety);
+  while(acc.length > 0) {
+    const [tm, tmty] = pickArg(acc);
+    check(env, tvs, tm, tmty);
   }
-  return terr(`cannot synthapp ${showType(ty)} @ ${showTerm(t)}`);
+  return ty;
+};
+const pickArg = acc => {
+  for (let i = 0, l = acc.length; i < l; i++) {
+    const opt = acc[i];
+    if (prune(opt[1]).tag !== 'TMeta') {
+      acc.splice(i, 1);
+      return opt;
+    }
+  }
+  return acc.shift();
 };
 
 const infer = (env, t) => {
@@ -248,7 +278,7 @@ const env = fromArray([
   ['revcons', TForall('t', TFun(TApp(tv('List'), tv('t')), TFun(tv('t'), TApp(tv('List'), tv('t')))))],
 ]);
 
-const term = Abs('x', App(v('idf'), v('x')));
+const term = App(App(v('revcons'), App(v('single'), v('id'))), v('id'));
 console.log(showTerm(term));
 const ty = infer(env, term);
 console.log(showType(ty));
