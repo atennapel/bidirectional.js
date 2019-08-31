@@ -49,12 +49,12 @@ const TVar = name => ({ tag: 'TVar', name });
 const TForall = (name, body) => ({ tag: 'TForall', name, body });
 const TFun = (left, right) => ({ tag: 'TFun', left, right });
 const TApp = (left, right) => ({ tag: 'TApp', left, right });
-const TMeta = (id, tvs) => ({ tag: 'TMeta', id, tvs, type: null });
+const TMeta = (id, tvs, mono) => ({ tag: 'TMeta', id, tvs, type: null, mono });
 const TSkol = id => ({ tag: 'TSkol', id });
 
 let _tmetaid = 0;
 const resetTMetaId = () => { _tmetaid = 0 };
-const freshTMeta = tvs => TMeta(_tmetaid++, tvs);
+const freshTMeta = (tvs, mono = false) => TMeta(_tmetaid++, tvs, mono);
 
 let _tskolid = 0;
 const resetTSkolId = () => { _tskolid = 0 };
@@ -63,7 +63,7 @@ const freshTSkol = () => TSkol(_tskolid++);
 const showType = t => {
   if (t.tag === 'TVar') return t.name;
   if (t.tag === 'TMeta')
-    return `?${t.id}${showList(t.tvs)}${t.type ? `{${showType(t.type)}}` : ''}`;
+    return `?${t.mono ? '`' : ''}${t.id}${showList(t.tvs)}${t.type ? `{${showType(t.type)}}` : ''}`;
   if (t.tag === 'TSkol') return `'${t.id}`;
   if (t.tag === 'TForall')
     return `(forall ${t.name}. ${showType(t.body)})`;
@@ -98,6 +98,7 @@ const openTForall = (f, t) => substTVar(f.name, t, f.body);
 const checkSolution = (m, t) => {
   if (t === m) return false;
   if (t.tag === 'TMeta') {
+    if (m.mono) t.mono = true;
     if (t.type) return checkSolution(m, t.type);
     return subset(m.tvs, t.tvs);
   }
@@ -105,7 +106,10 @@ const checkSolution = (m, t) => {
     return checkSolution(m, t.left) && checkSolution(m, t.right);
   if (t.tag === 'TApp')
     return checkSolution(m, t.left) && checkSolution(m, t.right);
-  if (t.tag === 'TForall') return checkSolution(m, t.body);
+  if (t.tag === 'TForall') {
+    if (m.mono) return false;
+    return checkSolution(m, t.body);
+  }
   if (t.tag === 'TSkol') return contains(m.tvs, t.id);
   return true;
 };
@@ -171,10 +175,9 @@ const synth = (env, tvs, t) => {
     return synthapp(env, tvs, ty, t.right);
   }
   if (t.tag === 'Abs') {
-    const a = freshTMeta(tvs);
+    const a = freshTMeta(tvs, true);
     const b = freshTMeta(tvs);
     check(Cons([t.name, a], env), tvs, t.body, b);
-    // TODO: check for that argument is monomorphic
     return TFun(a, b);
   }
   return terr(`cannot synth ${showTerm(t)}`);
@@ -238,10 +241,14 @@ const tid = TForall('t', TFun(tv('t'), tv('t')));
 
 const env = fromArray([
   ['id', tid],
+  ['ids', TApp(tv('List'), tid)],
+  ['idf', TFun(tid, tid)],
   ['single', TForall('t', TFun(tv('t'), TApp(tv('List'), tv('t'))))],
+  ['cons', TForall('t', TFun(tv('t'), TFun(TApp(tv('List'), tv('t')), TApp(tv('List'), tv('t')))))],
+  ['revcons', TForall('t', TFun(TApp(tv('List'), tv('t')), TFun(tv('t'), TApp(tv('List'), tv('t')))))],
 ]);
 
-const term = Ann(App(v('single'), v('id')), TApp(tv('List'), tid));
+const term = Abs('x', App(v('idf'), v('x')));
 console.log(showTerm(term));
 const ty = infer(env, term);
 console.log(showType(ty));
