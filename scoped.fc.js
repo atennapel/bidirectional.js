@@ -1,3 +1,7 @@
+/**
+ * This is a minimal implementation of a bidirectional version of HMF
+ * invariant but impredicative instantiations are supported
+ */
 // util
 const terr = msg => { throw new TypeError(msg) };
 
@@ -236,8 +240,7 @@ const synthapps = (env, tvs, ty, as, ety, acc = []) => {
       acc.push([tm, a]);
       return synthapps(env, tvs, b, as, ety, acc);
     }
-    // TODO: handle incomplete application
-    return terr(`synthapps fail`);
+    return terr(`synthapps failed, not a function type: ${showType(ty)}`);
   }
   if (ety) unify(tvs, ty, ety);
   while(acc.length > 0) {
@@ -276,9 +279,12 @@ const env = fromArray([
   ['single', TForall('t', TFun(tv('t'), TApp(tv('List'), tv('t'))))],
   ['cons', TForall('t', TFun(tv('t'), TFun(TApp(tv('List'), tv('t')), TApp(tv('List'), tv('t')))))],
   ['revcons', TForall('t', TFun(TApp(tv('List'), tv('t')), TFun(tv('t'), TApp(tv('List'), tv('t')))))],
+  ['consthr', TForall('t', TFun(tv('t'), TForall('r', TFun(tv('r'), tv('t')))))],
+  ['Z', tv('Nat')],
+  ['str', tv('Str')],
 ]);
 
-const term = App(App(v('revcons'), App(v('single'), v('id'))), v('id'));
+const term = App(App(v('consthr'), v('id')), v('str'));
 console.log(showTerm(term));
 const ty = infer(env, term);
 console.log(showType(ty));
