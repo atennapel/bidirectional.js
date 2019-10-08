@@ -67,6 +67,7 @@ const flattenApp = t => {
 const TVar = name => ({ tag: 'TVar', name });
 const TForall = (name, body) => ({ tag: 'TForall', name, body });
 const TFun = (left, right) => ({ tag: 'TFun', left, right });
+const TApp = (left, right) => ({ tag: 'TApp', left, right });
 const TMeta = (id, tvs) => ({ tag: 'TMeta', id, tvs, type: null });
 const TSkol = id => ({ tag: 'TSkol', id });
 
@@ -87,11 +88,14 @@ const showType = t => {
     return `(forall ${t.name}. ${showType(t.body)})`;
   if (t.tag === 'TFun')
     return `(${showType(t.left)} -> ${showType(t.right)})`;
+  if (t.tag === 'TApp')
+    return `(${showType(t.left)} -> ${showType(t.right)})`;
 };
 
 const prune = t => {
   if (t.tag === 'TMeta') return t.type ? t.type = prune(t.type) : t;
   if (t.tag === 'TFun') return TFun(prune(t.left), prune(t.right));
+  if (t.tag === 'TApp') return TApp(prune(t.left), prune(t.right));
   if (t.tag === 'TForall') return TForall(t.name, prune(t.body));
   return t;
 };
@@ -101,20 +105,13 @@ const substTVar = (x, s, t) => {
   if (t.tag === 'TMeta' && t.type) return substTVar(x, s, t.type);
   if (t.tag === 'TFun')
     return TFun(substTVar(x, s, t.left), substTVar(x, s, t.right));
+  if (t.tag === 'TApp')
+    return TApp(substTVar(x, s, t.left), substTVar(x, s, t.right));
   if (t.tag === 'TForall')
     return t.name === x ? t : TForall(t.name, substTVar(x, s, t.body));
   return t;
 };
 const openTForall = (f, t) => substTVar(f.name, t, f.body);
-
-const containsTMeta = (t, m) => {
-  if (t === m) return true;
-  if (t.tag === 'TMeta' && t.type) return containsTMeta(t.type, m);
-  if (t.tag === 'TFun')
-    return containsTMeta(t.left, m) || containsTMeta(t.right, m);
-  if (t.tag === 'TForall') return containsTMeta(t.body, m);
-  return false;
-};
 
 // unification
 const checkSolution = (m, t) => {
@@ -125,13 +122,15 @@ const checkSolution = (m, t) => {
   }
   if (t.tag === 'TFun')
     return checkSolution(m, t.left) && checkSolution(m, t.right);
+  if (t.tag === 'TApp')
+    return checkSolution(m, t.left) && checkSolution(m, t.right);
   if (t.tag === 'TForall')
     return checkSolution(m, t.body);
   if (t.tag === 'TSkol') return contains(m.tvs, t.id);
   return true;
 };
 const solve = (m, t) => {
-  console.log(`solve ${showType(m)} := ${showType(t)}`);
+  // console.log(`solve ${showType(m)} := ${showType(t)}`);
   if (m === t) return;
   if (m.type) return unify(m.type, t);
   if (t.tag === 'TMeta' && t.type) return solve(m, t.type);
@@ -140,10 +139,15 @@ const solve = (m, t) => {
   m.type = t;
 };
 const unify = (a, b) => {
-  console.log(`unify ${showType(a)} ~ ${showType(b)}`);
+  // console.log(`unify ${showType(a)} ~ ${showType(b)}`);
   if (a === b) return;
   if (a.tag === 'TVar' && b.tag === 'TVar' && a.name === b.name) return;
   if (a.tag === 'TFun' && b.tag === 'TFun') {
+    unify(a.left, b.left);
+    unify(a.right, b.right);
+    return;
+  }
+  if (a.tag === 'TApp' && b.tag === 'TApp') {
     unify(a.left, b.left);
     unify(a.right, b.right);
     return;
@@ -158,7 +162,7 @@ const unify = (a, b) => {
   return terr(`failed ${showType(a)} ~ ${showType(b)}`);
 };
 const subsume = (tvs, a, b) => {
-  console.log(`subsume ${showType(a)} <: ${showType(b)}`);
+  // console.log(`subsume ${showType(a)} <: ${showType(b)}`);
   if (b.tag === 'TForall') {
     const sk = freshTSkol();
     return subsume(Cons(sk.id, tvs), a, openTForall(b, sk));
@@ -172,7 +176,7 @@ const subsume = (tvs, a, b) => {
 
 // inference
 const check = (env, tvs, t, ty) => {
-  console.log(`check ${showTerm(t)} : ${showType(ty)}`);
+  // console.log(`check ${showTerm(t)} : ${showType(ty)}`);
   if (ty.tag === 'TMeta' && ty.type) return check(env, tvs, t, ty.type);
   if (ty.tag === 'TForall') {
     const sk = freshTSkol();
@@ -187,8 +191,8 @@ const check = (env, tvs, t, ty) => {
     const [fn, args] = flattenApp(t);
     const fty = synth(env, tvs, fn);
     const [rt, targs] = collect(tvs, fty, args);
-    unify(rt, ty); // or subsume??
-    console.log(`${showList(targs, ([t, ty]) => `${showTerm(t)} : ${showType(ty)}`)} -> ${showType(rt)} : ${showType(ty)}`);
+    subsume(tvs, rt, ty); // subsume or unify?
+    // console.log(`${showList(targs, ([t, ty]) => `${showTerm(t)} : ${showType(ty)}`)} -> ${showType(rt)} : ${showType(ty)}`);
     each(targs, ([t, ty]) => check(env, tvs, t, ty));
     return;
   }
@@ -197,7 +201,7 @@ const check = (env, tvs, t, ty) => {
 };
 
 const synth = (env, tvs, t) => {
-  console.log(`synth ${showTerm(t)}`);
+  // console.log(`synth ${showTerm(t)}`);
   if (t.tag === 'Var') {
     const ty = lookup(env, t.name);
     if (!t) return terr(`undefined var ${t.name}`);
@@ -211,7 +215,7 @@ const synth = (env, tvs, t) => {
     const [fn, args] = flattenApp(t);
     const ty = synth(env, tvs, fn);
     const [rt, targs] = collect(tvs, ty, args);
-    console.log(`${showList(targs, ([t, ty]) => `${showTerm(t)} : ${showType(ty)}`)} -> ${showType(rt)}`);
+    // console.log(`${showList(targs, ([t, ty]) => `${showTerm(t)} : ${showType(ty)}`)} -> ${showType(rt)}`);
     each(targs, ([t, ty]) => check(env, tvs, t, ty));
     return rt;
   }
@@ -258,15 +262,88 @@ const tv = TVar;
 function tfun() { return Array.from(arguments).reduceRight((x, y) => TFun(y, x)) }
 function app() { return Array.from(arguments).reduce(App) }
 const tid = TForall('t', tfun(tv('t'), tv('t')));
+const List = t => TApp(tv('List'), t);
+const ST = (s, t) => TApp(TApp(tv('ST'), s), t);
+const Pair = (a, b) => TApp(TApp(tv('Pair'), a), b);
 
 const env = fromArray([
+  ['head', TForall('t', TFun(List(tv('t')), tv('t')))],
+  ['tail', TForall('t', TFun(List(tv('t')), List(tv('t'))))],
+  ['Nil', TForall('t', List(tv('t')))],
+  ['Cons', TForall('t', TFun(tv('t'), TFun(List(tv('t')), List(tv('t')))))],
+  ['single', TForall('t', TFun(tv('t'), List(tv('t'))))],
+  ['append', TForall('t', TFun(List(tv('t')), TFun(List(tv('t')), List(tv('t')))))],
+  ['length', TForall('t', TFun(List(tv('t')), tv('Int')))],
+  ['runST', TForall('t', TFun(TForall('s', ST(tv('s'), tv('t'))), tv('t')))],
+  ['argST', TForall('s', ST(tv('s'), tv('Int')))],
+  ['pair', TForall('a', TForall('b', TFun(tv('a'), TFun(tv('b'), Pair(tv('a'), tv('b'))))))],
+  ['pair2', TForall('b', TForall('a', TFun(tv('a'), TFun(tv('b'), Pair(tv('a'), tv('b'))))))],
   ['id', tid],
-  ['ids', tfun(tv('U'), tid)],
-  ['cons', TForall('t', tfun(tv('t'), tfun(tv('U'), tv('t')), tfun(tv('U'), tv('t'))))],
-  ['snoc', TForall('t', tfun(tfun(tv('U'), tv('t')), tv('t'), tfun(tv('U'), tv('t'))))],
+  ['ids', List(tid)],
+  ['inc', TFun(tv('Int'), tv('Int'))],
+  ['choose', TForall('t', TFun(tv('t'), TFun(tv('t'), tv('t'))))],
+  ['poly', TFun(tid, Pair(tv('Int'), tv('Bool')))],
+  ['auto', TFun(tid, tid)],
+  ['auto2', TForall('b', TFun(tid, TFun(tv('b'), tv('b'))))],
+  ['map', TForall('a', TForall('b', TFun(TFun(tv('a'), tv('b')), TFun(List(tv('a')), List(tv('b'))))))],
+  ['app', TForall('a', TForall('b', TFun(TFun(tv('a'), tv('b')), TFun(tv('a'), tv('b')))))],
+  ['revapp', TForall('a', TForall('b', TFun(tv('a'), TFun(TFun(tv('a'), tv('b')), tv('b')))))],
+  ['f', TForall('t', TFun(TFun(tv('t'), tv('t')), TFun(List(tv('t')), tv('t'))))],
+  ['g', TForall('t', TFun(List(tv('t')), TFun(List(tv('t')), tv('t'))))],
+  ['k', TForall('t', TFun(tv('t'), TFun(List(tv('t')), tv('t'))))],
+  ['h', TFun(tv('Int'), tid)],
+  ['l', List(TForall('t', TFun(tv('Int'), TFun(tv('t'), tv('t')))))],
+  ['r', TFun(TForall('a', TFun(tv('a'), tid)), tv('Int'))],
 ]);
 
-const term = Ann(app(v('cons'), v('id'), v('ids')), tfun(tv('U'), tid));
-console.log(showTerm(term));
-const ty = infer(env, term);
-console.log(showType(ty));
+[
+  // A
+  Abs('x', Abs('y', v('x'))),
+  App(v('choose'), v('id')),
+  Ann(App(v('choose'), v('id')), TFun(tid, tid)),
+  App(App(v('choose'), v('Nil')), v('ids')),
+  App(v('id'), v('auto')),
+  App(v('id'), v('auto2')),
+  App(App(v('choose'), v('id')), v('auto')),
+  App(App(v('choose'), v('id')), v('auto2')), // X
+  App(App(v('f'), App(v('choose'), v('id'))), v('ids')), // X
+  App(App(v('f'), Ann(App(v('choose'), v('id')), TFun(tid, tid))), v('ids')),
+  App(v('poly'), v('id')),
+  App(v('poly'), Abs('x', v('x'))),
+  App(App(v('id'), v('poly')), Abs('x', v('x'))),
+
+  // B
+
+  // C
+  App(v('length'), v('ids')),
+  App(v('tail'), v('ids')),
+  App(v('head'), v('ids')),
+  App(v('single'), v('id')),
+  Ann(App(v('single'), v('id')), List(tid)),
+  App(App(v('Cons'), v('id')), v('ids')),
+  App(App(v('Cons'), Abs('x', v('x'))), v('ids')),
+  App(App(v('append'), App(v('single'), v('inc'))), App(v('single'), v('id'))),
+  App(App(v('g'), App(v('single'), v('id'))), v('ids')), // X
+  App(App(v('g'), Ann(App(v('single'), v('id')), List(tid))), v('ids')),  
+  App(App(v('map'), v('poly')), App(v('single'), v('id'))),
+  App(App(v('map'), v('head')), App(v('single'), v('ids'))),
+
+  // D
+  App(App(v('app'), v('poly')), v('id')),
+  App(App(v('revapp'), v('id')), v('poly')),
+  App(v('runST'), v('argST')),
+  App(App(v('app'), v('runST')), v('argST')),
+  App(App(v('revapp'), v('argST')), v('runST')),
+
+  // E
+  App(App(v('k'), v('h')), v('l')), // X
+  App(App(v('k'), Abs('x', App(v('h'), v('x')))), v('l')),
+  App(v('r'), Abs('x', Abs('y', v('y')))),
+].forEach(t => {
+  try {
+    const ty = infer(env, t);
+    console.log(`${showTerm(t)} : ${showType(ty)}`);
+  } catch(e) {
+    console.log(`${showTerm(t)} => ${e}`);
+  }
+});
