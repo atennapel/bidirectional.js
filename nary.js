@@ -89,7 +89,7 @@ const showType = t => {
   if (t.tag === 'TFun')
     return `(${showType(t.left)} -> ${showType(t.right)})`;
   if (t.tag === 'TApp')
-    return `(${showType(t.left)} -> ${showType(t.right)})`;
+    return `(${showType(t.left)} ${showType(t.right)})`;
 };
 
 const prune = t => {
