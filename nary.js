@@ -1,6 +1,11 @@
 /*
   Simple implementation of type inference for invariant System F.
   Supports some impredicativity.
+  Also elaborates to System F.
+  Does not do any generalization.
+  
+  TODO:
+  - add quick look
 */
 const terr = msg => { throw new TypeError(msg) };
 
@@ -16,23 +21,22 @@ const showList = (l, str = x => `${x}`) => {
   }
   return `[${r.join(', ')}]`;
 };
-
 const each = (l, f) => {
   while (l.tag === 'Cons') {
     f(l.head);
     l = l.tail;
   }
 };
-
+const map = (l, f) =>
+  l.tag === 'Cons' ? Cons(f(l.head), map(l.tail, f)) : l;
+const foldl = (f, v, l) =>
+  l.tag === 'Cons' ? foldl(f, f(v, l.head), l.tail) : v;
 const contains = (l, x) =>
   l.tag === 'Cons' ? l.head === x || contains(l.tail, x) : false;
-
 const subset = (a, b) =>
   a.tag === 'Cons' ? (contains(b, a.head) ? subset(a.tail, b) : false) : true;
-
 const lookup = (l, x) =>
   l.tag === 'Cons' ? (l.head[0] === x ? l.head[1] : lookup(l.tail, x)) : null;
-
 const fromArray = a => {
   let l = Nil;
   for (let i = a.length - 1; i >= 0; i--) l = Cons(a[i], l);
@@ -41,17 +45,23 @@ const fromArray = a => {
 
 // terms
 const Var = name => ({ tag: 'Var', name });
-const Abs = (name, body) => ({ tag: 'Abs', name, body });
+const Abs = (name, body, type) => ({ tag: 'Abs', name, body, type });
 const App = (left, right) => ({ tag: 'App', left, right });
 const Ann = (term, type) => ({ tag: 'Ann', term, type });
+const AbsT = (name, body) => ({ tag: 'AbsT', name, body });
+const AppT = (left, right) => ({ tag: 'AppT', left, right });
 
 const showTerm = t => {
   if (t.tag === 'Var') return t.name;
-  if (t.tag === 'Abs') return `(\\${t.name}. ${showTerm(t.body)})`;
+  if (t.tag === 'Abs')
+    return t.type ? `(\\(${t.name} : ${showType(t.type)}). ${showTerm(t.body)})` : `(\\${t.name}. ${showTerm(t.body)})`;
   if (t.tag === 'App')
     return `(${showTerm(t.left)} ${showTerm(t.right)})`;
   if (t.tag === 'Ann')
     return `(${showTerm(t.term)} : ${showType(t.type)})`;
+  if (t.tag === 'AbsT') return `(/\\${t.name}. ${showTerm(t.body)})`;
+  if (t.tag === 'AppT')
+    return `(${showTerm(t.left)} @${showType(t.right)})`;
 };
 
 const flattenApp = t => {
@@ -63,13 +73,28 @@ const flattenApp = t => {
   return [t, r];
 };
 
+const pruneTerm = t => {
+  if (t.tag === 'Abs')
+    return t.type ? Abs(t.name, pruneTerm(t.body), prune(t.type, true)) : t;
+  if (t.tag === 'App') return App(pruneTerm(t.left), pruneTerm(t.right));
+  if (t.tag === 'Ann') return Ann(pruneTerm(t.term), prune(t.type, true));
+  if (t.tag === 'AbsT') return AbsT(t.name, pruneTerm(t.body));
+  if (t.tag === 'AppT') return AppT(pruneTerm(t.left), prune(t.right, true));
+  return t;
+};
+
 // types
 const TVar = name => ({ tag: 'TVar', name });
 const TForall = (name, body) => ({ tag: 'TForall', name, body });
-const TFun = (left, right) => ({ tag: 'TFun', left, right });
 const TApp = (left, right) => ({ tag: 'TApp', left, right });
 const TMeta = (id, tvs) => ({ tag: 'TMeta', id, tvs, type: null });
-const TSkol = id => ({ tag: 'TSkol', id });
+const TSkol = (id, name) => ({ tag: 'TSkol', id, name });
+
+const TFunC = TVar('->');
+const TFun = (left, right) => TApp(TApp(TFunC, left), right);
+const isTFun = t =>
+  t.tag === 'TApp' && t.left.tag === 'TApp' && t.left.left === TFunC;
+const matchTFun = t => isTFun(t) ? ({ left: t.left.right, right: t.right }) : null;
 
 let _tmetaid = 0;
 const resetTMetaId = () => { _tmetaid = 0 };
@@ -77,34 +102,36 @@ const freshTMeta = tvs => TMeta(_tmetaid++, tvs);
 
 let _tskolid = 0;
 const resetTSkolId = () => { _tskolid = 0 };
-const freshTSkol = () => TSkol(_tskolid++);
+const freshTSkol = name => TSkol(_tskolid++, name);
 
 const showType = t => {
   if (t.tag === 'TVar') return t.name;
   if (t.tag === 'TMeta')
     return `?${t.id}${showList(t.tvs)}${t.type ? `{${showType(t.type)}}` : ''}`;
-  if (t.tag === 'TSkol') return `'${t.id}`;
+  if (t.tag === 'TSkol') return `'${t.name}\$${t.id}`;
   if (t.tag === 'TForall')
     return `(forall ${t.name}. ${showType(t.body)})`;
-  if (t.tag === 'TFun')
-    return `(${showType(t.left)} -> ${showType(t.right)})`;
+  const m = matchTFun(t);
+  if (m) return `(${showType(m.left)} -> ${showType(m.right)})`;
   if (t.tag === 'TApp')
     return `(${showType(t.left)} ${showType(t.right)})`;
 };
 
-const prune = t => {
-  if (t.tag === 'TMeta') return t.type ? t.type = prune(t.type) : t;
-  if (t.tag === 'TFun') return TFun(prune(t.left), prune(t.right));
-  if (t.tag === 'TApp') return TApp(prune(t.left), prune(t.right));
-  if (t.tag === 'TForall') return TForall(t.name, prune(t.body));
+const force = t => {
+  while (t.tag === 'TMeta' && t.type) t = t.type;
+  return t;
+};
+const prune = (t, forceTSkol) => {
+  if (t.tag === 'TMeta') return t.type ? t.type = prune(t.type, forceTSkol) : t;
+  if (t.tag === 'TApp') return TApp(prune(t.left, forceTSkol), prune(t.right, forceTSkol));
+  if (t.tag === 'TForall') return TForall(t.name, prune(t.body, forceTSkol));
+  if (t.tag === 'TSkol') return forceTSkol ? TVar(t.name) : t;
   return t;
 };
 
 const substTVar = (x, s, t) => {
   if (t.tag === 'TVar') return t.name === x ? s : t;
   if (t.tag === 'TMeta' && t.type) return substTVar(x, s, t.type);
-  if (t.tag === 'TFun')
-    return TFun(substTVar(x, s, t.left), substTVar(x, s, t.right));
   if (t.tag === 'TApp')
     return TApp(substTVar(x, s, t.left), substTVar(x, s, t.right));
   if (t.tag === 'TForall')
@@ -113,15 +140,18 @@ const substTVar = (x, s, t) => {
 };
 const openTForall = (f, t) => substTVar(f.name, t, f.body);
 
+const isMono = t => {
+  if (t.tag === 'TMeta') return t.type ? isMono(t.type) : true;
+  if (t.tag === 'TForall') return false;
+  if (t.tag === 'TApp') return isMono(t.left) && isMono(t.right);
+  return true;
+};
+
 // unification
 const checkSolution = (m, t) => {
   if (t === m) return false;
-  if (t.tag === 'TMeta') {
-    if (t.type) return checkSolution(m, t.type);
+  if (t.tag === 'TMeta')
     return subset(m.tvs, t.tvs) && subset(t.tvs, m.tvs);
-  }
-  if (t.tag === 'TFun')
-    return checkSolution(m, t.left) && checkSolution(m, t.right);
   if (t.tag === 'TApp')
     return checkSolution(m, t.left) && checkSolution(m, t.right);
   if (t.tag === 'TForall')
@@ -129,31 +159,27 @@ const checkSolution = (m, t) => {
   if (t.tag === 'TSkol') return contains(m.tvs, t.id);
   return true;
 };
-const solve = (m, t) => {
+const solve = (m, t_) => {
   // console.log(`solve ${showType(m)} := ${showType(t)}`);
-  if (m === t) return;
-  if (m.type) return unify(m.type, t);
-  if (t.tag === 'TMeta' && t.type) return solve(m, t.type);
+  const t = prune(t_);
   if (!checkSolution(m, t))
     return terr(`solve failed: ${showType(m)} := ${showType(t)}`);
   m.type = t;
 };
-const unify = (a, b) => {
-  // console.log(`unify ${showType(a)} ~ ${showType(b)}`);
+const unify = (a_, b_) => {
+  // console.log(`unify ${showType(a_)} ~ ${showType(b_)}`);
+  if (a_ === b_) return;
+  const a = force(a_);
+  const b = force(b_);
   if (a === b) return;
   if (a.tag === 'TVar' && b.tag === 'TVar' && a.name === b.name) return;
-  if (a.tag === 'TFun' && b.tag === 'TFun') {
-    unify(a.left, b.left);
-    unify(a.right, b.right);
-    return;
-  }
   if (a.tag === 'TApp' && b.tag === 'TApp') {
     unify(a.left, b.left);
     unify(a.right, b.right);
     return;
   }
   if (a.tag === 'TForall' && b.tag === 'TForall') {
-    const sk = freshTSkol();
+    const sk = freshTSkol(a.name);
     unify(openTForall(a, sk), openTForall(b, sk));
     return;
   }
@@ -161,43 +187,45 @@ const unify = (a, b) => {
   if (b.tag === 'TMeta') return solve(b, a)
   return terr(`failed ${showType(a)} ~ ${showType(b)}`);
 };
-const subsume = (tvs, a, b) => {
-  // console.log(`subsume ${showType(a)} <: ${showType(b)}`);
-  if (b.tag === 'TForall') {
-    const sk = freshTSkol();
-    return subsume(Cons(sk.id, tvs), a, openTForall(b, sk));
-  }
-  if (a.tag === 'TForall') {
-    const m = freshTMeta(tvs);
-    return subsume(tvs, openTForall(a, m), b);
-  }
-  return unify(a, b);
-};
 
 // inference
-const check = (env, tvs, t, ty) => {
-  // console.log(`check ${showTerm(t)} : ${showType(ty)}`);
-  if (ty.tag === 'TMeta' && ty.type) return check(env, tvs, t, ty.type);
+const instantiate = (tvs, ty_) => {
+  const ty = force(ty_);
   if (ty.tag === 'TForall') {
-    const sk = freshTSkol();
-    check(env, Cons(sk.id, tvs), t, openTForall(ty, sk));
-    return;
+    const m = freshTMeta(tvs);
+    const [rty, args] = instantiate(tvs, openTForall(ty, m));
+    return [rty, Cons(m, args)];
   }
-  if (t.tag === 'Abs' && ty.tag === 'TFun') {
-    check(Cons([t.name, ty.left], env), tvs, t.body, ty.right);
-    return;
+  return [ty, Nil];
+};
+
+const check = (env, tvs, t, ty_) => {
+  // console.log(`check ${showTerm(t)} : ${showType(ty_)}`);
+  const ty = force(ty_);
+  if (ty.tag === 'TForall') {
+    const sk = freshTSkol(ty.name);
+    const tm = check(env, Cons(sk.id, tvs), t, openTForall(ty, sk));
+    return AbsT(ty.name, tm);
+  }
+  const m = matchTFun(ty);
+  if (t.tag === 'Abs' && !t.type && m) {
+    const tm = check(Cons([t.name, m.left], env), tvs, t.body, m.right);
+    return Abs(t.name, tm, m.left);
   }
   if (t.tag === 'App') {
     const [fn, args] = flattenApp(t);
-    const fty = synth(env, tvs, fn);
+    const [fty, ftm] = synth(env, tvs, fn);
     const [rt, targs] = collect(tvs, fty, args);
-    subsume(tvs, rt, ty); // subsume or unify?
+    const [inst, margs] = instantiate(tvs, rt);
+    unify(inst, ty);
     // console.log(`${showList(targs, ([t, ty]) => `${showTerm(t)} : ${showType(ty)}`)} -> ${showType(rt)} : ${showType(ty)}`);
-    each(targs, ([t, ty]) => check(env, tvs, t, ty));
-    return;
+    const tm = foldl((acc, [b, t, ty]) => b ? AppT(acc, t) : App(acc, check(env, tvs, t, ty)), ftm, targs);
+    return foldl((a, m) => AppT(a, m), tm, margs);
   }
-  const inf = synth(env, tvs, t);
-  subsume(tvs, inf, ty);
+  const [inf, tm] = synth(env, tvs, t);
+  const [inst, args] = instantiate(tvs, inf);
+  unify(inst, ty);
+  return foldl((a, m) => AppT(a, m), tm, args);
 };
 
 const synth = (env, tvs, t) => {
@@ -205,41 +233,62 @@ const synth = (env, tvs, t) => {
   if (t.tag === 'Var') {
     const ty = lookup(env, t.name);
     if (!t) return terr(`undefined var ${t.name}`);
-    return ty;
+    return [ty, t];
   }
   if (t.tag === 'Ann') {
-    check(env, tvs, t.term, t.type);
-    return t.type;
+    const tm = check(env, tvs, t.term, t.type);
+    return [t.type, tm];
   }
   if (t.tag === 'App') {
     const [fn, args] = flattenApp(t);
-    const ty = synth(env, tvs, fn);
+    const [ty, ftm] = synth(env, tvs, fn);
     const [rt, targs] = collect(tvs, ty, args);
     // console.log(`${showList(targs, ([t, ty]) => `${showTerm(t)} : ${showType(ty)}`)} -> ${showType(rt)}`);
-    each(targs, ([t, ty]) => check(env, tvs, t, ty));
-    return rt;
+    const result = foldl((acc, [b, t, ty]) => b ? AppT(acc, t) : App(acc, check(env, tvs, t, ty)), ftm, targs);
+    return [rt, result];
   }
   if (t.tag === 'Abs') {
-    const a = freshTMeta(tvs);
-    const b = freshTMeta(tvs);
-    check(Cons([t.name, a], env), tvs, t.body, b);
-    return TFun(a, b);
+    if (t.type) {
+      const rt = freshTMeta(tvs);
+      const tm = check(Cons([t.name, t.type], env), tvs, t.body, rt);
+      return [TFun(t.type, rt), Abs(t.name, tm, t.type)];
+    } else {
+      const a = freshTMeta(tvs);
+      const b = freshTMeta(tvs);
+      const tm = check(Cons([t.name, a], env), tvs, t.body, b);
+      if (!isMono(a))
+        return terr(`polymorphic type inferred for parameter of ${showTerm(t)}: ${showType(a)}`);
+      return [TFun(a, b), Abs(t.name, tm, a)];
+    }
+  }
+  if (t.tag === 'AbsT') {
+    const sk = freshTSkol(t.name);
+    const ntvs = Cons(sk, tvs);
+    const m = freshTMeta(ntvs);
+    const tm = check(env, ntvs, t.body, m);
+    return [TForall(t.name, m), AbsT(t.name, tm)];
+  }
+  if (t.tag === 'AppT') {
+    const [ty, tm] = synth(env, tvs, t.left);
+    return synthappT(tm, ty, t.right);
   }
   return terr(`cannot synth ${showTerm(t)}`);
 };
 
-const collect = (tvs, ty, args) => {
+const collect = (tvs, ty_, args) => {
+  const ty = force(ty_);
   if (args.tag === 'Nil') return [ty, Nil]
   if (ty.tag === 'TForall') {
     const m = freshTMeta(tvs);
-    return collect(tvs, openTForall(ty, m), args);
+    const [rt, rest] = collect(tvs, openTForall(ty, m), args);
+    return [rt, Cons([true, m], rest)];
   }
-  if (ty.tag === 'TFun') {
-    const [rt, rest] = collect(tvs, ty.right, args.tail);
-    return [rt, Cons([args.head, ty.left], rest)];
+  const m = matchTFun(ty);
+  if (m) {
+    const [rt, rest] = collect(tvs, m.right, args.tail);
+    return [rt, Cons([false, args.head, m.left], rest)];
   }
   if (ty.tag === 'TMeta') {
-    if (ty.type) return collect(tvs, ty.type, args);
     const a = freshTMeta(ty.tvs);
     const b = freshTMeta(ty.tvs);
     const fun = TFun(a, b)
@@ -249,11 +298,17 @@ const collect = (tvs, ty, args) => {
   return terr(`cannot collect ${showType(ty)} @ ${showList(args, showTerm)}`);
 };
 
+const synthappT = (tm, ty_, type) => {
+  const ty = force(ty_);
+  if (ty.tag === 'TForall') return [openTForall(ty, type), AppT(tm, type)];
+  return terr(`not a forall in type application: ${showType(ty)} @ ${showType(type)}`);
+};
+
 const infer = (env, t) => {
   resetTMetaId();
   resetTSkolId();
-  const ty = synth(env, Nil, t);
-  return prune(ty);
+  const [ty, tm] = synth(env, Nil, t);
+  return [prune(ty), pruneTerm(tm)];
 };
 
 // testing
@@ -294,6 +349,8 @@ const env = fromArray([
   ['h', TFun(tv('Int'), tid)],
   ['l', List(TForall('t', TFun(tv('Int'), TFun(tv('t'), tv('t')))))],
   ['r', TFun(TForall('a', TFun(tv('a'), tid)), tv('Int'))],
+  ['str', tv('Str')],
+  ['int', tv('Int')],
 ]);
 
 [
@@ -311,8 +368,6 @@ const env = fromArray([
   App(v('poly'), v('id')),
   App(v('poly'), Abs('x', v('x'))),
   App(App(v('id'), v('poly')), Abs('x', v('x'))),
-
-  // B
 
   // C
   App(v('length'), v('ids')),
@@ -339,11 +394,19 @@ const env = fromArray([
   App(App(v('k'), v('h')), v('l')), // X
   App(App(v('k'), Abs('x', App(v('h'), v('x')))), v('l')),
   App(v('r'), Abs('x', Abs('y', v('y')))),
+
+  // Other
+  AbsT('t', Abs('x', v('x'), tv('t'))),
+  AbsT('t', AppT(AbsT('t', Abs('x', v('x'), tv('t'))), tv('t'))),
+  App(Abs('x', v('x')), Abs('x', v('x'))),
+  Ann(Abs('x', Abs('y', v('x'))), TForall('a', TFun(tv('a'), TForall('b', TFun(tv('b'), tv('a')))))),
+  App(App(Ann(Abs('x', Abs('y', v('x'))), TForall('a', TFun(tv('a'), TForall('b', TFun(tv('b'), tv('a')))))), v('int')), v('str')),
+  App(v('id'), Abs('x', v('x'))),
 ].forEach(t => {
   try {
-    const ty = infer(env, t);
-    console.log(`${showTerm(t)} : ${showType(ty)}`);
+    const [ty, tm] = infer(env, t);
+    console.log(`${showTerm(t)}\n: ${showType(ty)}\n=> ${showTerm(tm)}\n`);
   } catch(e) {
-    console.log(`${showTerm(t)} => ${e}`);
+    console.log(`${showTerm(t)}\n=> ${e}\n`);
   }
 });
