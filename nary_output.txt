@@ -162,4 +162,16 @@
 : (forall a. (a -> (forall t. (t -> t))))
 => (/\a. (((const @(forall t. (t -> t))) @a) (/\t. (id @t))))
 
+(const (\x. x))
+: (forall $0. (forall $1. ($0 -> ($1 -> $1))))
+=> (/\$0. (/\$1. (((const @($1 -> $1)) @$0) (\(x : $1). x))))
+
+((const (\x. x)) : (forall a. (forall b. (a -> (b -> b)))))
+: (forall a. (forall b. (a -> (b -> b))))
+=> (/\a. (/\b. (((const @(b -> b)) @a) (\(x : b). x))))
+
+((const (\x. x)) : (forall a. (a -> (forall t. (t -> t)))))
+: (forall a. (a -> (forall t. (t -> t))))
+=> (/\a. (((const @(forall t. (t -> t))) @a) (/\t. (\(x : t). x))))
+
 failed: 4

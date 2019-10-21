@@ -470,6 +470,9 @@ let failed = 0;
   App(v('const'), v('id')),
   Ann(App(v('const'), v('id')), tforall(['a', 'b'], TFun(tv('a'), TFun(tv('b'), tv('b'))))),
   Ann(App(v('const'), v('id')), tforall(['a'], TFun(tv('a'), tid))),
+  App(v('const'), Abs('x', v('x'))),
+  Ann(App(v('const'), Abs('x', v('x'))), tforall(['a', 'b'], TFun(tv('a'), TFun(tv('b'), tv('b'))))),
+  Ann(App(v('const'), Abs('x', v('x'))), tforall(['a'], TFun(tv('a'), tid))),
 ].forEach(t => {
   try {
     const [ty, tm] = infer(env, t, true);
