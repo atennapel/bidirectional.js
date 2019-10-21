@@ -1,12 +1,15 @@
 /*
   Simple implementation of type inference for invariant System F.
-  Supports some impredicativity.
+  Supports some impredicativity by first checking arguments that
+  are not checked by a meta type variable.
   Also elaborates to System F.
   Does not do any generalization.
-  
+
   TODO:
-  - add quick look
+  - monomorphic flag in meta variable?
+  - is skolem tv prune safe?
 */
+
 const terr = msg => { throw new TypeError(msg) };
 
 // list
@@ -42,6 +45,14 @@ const fromArray = a => {
   for (let i = a.length - 1; i >= 0; i--) l = Cons(a[i], l);
   return l;
 };
+const toArray = (l, m = x => x, f = () => true) => {
+  const a = [];
+  while (l.tag === 'Cons') {
+    if (f(l.head)) a.push(m(l.head));
+    l = l.tail;
+  }
+  return a;
+};
 
 // terms
 const Var = name => ({ tag: 'Var', name });
@@ -50,6 +61,8 @@ const App = (left, right) => ({ tag: 'App', left, right });
 const Ann = (term, type) => ({ tag: 'Ann', term, type });
 const AbsT = (name, body) => ({ tag: 'AbsT', name, body });
 const AppT = (left, right) => ({ tag: 'AppT', left, right });
+
+const absT = (tvs, body) => tvs.reduceRight((x, y) => AbsT(y, x), body);
 
 const showTerm = t => {
   if (t.tag === 'Var') return t.name;
@@ -104,6 +117,8 @@ let _tskolid = 0;
 const resetTSkolId = () => { _tskolid = 0 };
 const freshTSkol = name => TSkol(_tskolid++, name);
 
+const tforall = (tvs, body) => tvs.reduceRight((x, y) => TForall(y, x), body);
+
 const showType = t => {
   if (t.tag === 'TVar') return t.name;
   if (t.tag === 'TMeta')
@@ -145,6 +160,17 @@ const isMono = t => {
   if (t.tag === 'TForall') return false;
   if (t.tag === 'TApp') return isMono(t.left) && isMono(t.right);
   return true;
+};
+
+const tmetas = (t_, a = []) => {
+  const t = force(t_);
+  if (t.tag === 'TMeta') {
+    if (a.indexOf(t) < 0) a.push(t);
+    return a;
+  }
+  if (t.tag === 'TForall') return tmetas(t.body, a);
+  if (t.tag === 'TApp') return tmetas(t.right, tmetas(t.left, a));
+  return a;
 };
 
 // unification
@@ -218,7 +244,8 @@ const check = (env, tvs, t, ty_) => {
     const [rt, targs] = collect(tvs, fty, args);
     const [inst, margs] = instantiate(tvs, rt);
     unify(inst, ty);
-    // console.log(`${showList(targs, ([t, ty]) => `${showTerm(t)} : ${showType(ty)}`)} -> ${showType(rt)} : ${showType(ty)}`);
+    // console.log(`${showList(targs, ([b, t, ty]) => b ? `@${showType(t)}` : `${showTerm(t)} : ${showType(ty)}`)} => ${showType(rt)}`);
+    handleArgs(env, tvs, targs);
     const tm = foldl((acc, [b, t, ty]) => b ? AppT(acc, t) : App(acc, check(env, tvs, t, ty)), ftm, targs);
     return foldl((a, m) => AppT(a, m), tm, margs);
   }
@@ -232,7 +259,7 @@ const synth = (env, tvs, t) => {
   // console.log(`synth ${showTerm(t)}`);
   if (t.tag === 'Var') {
     const ty = lookup(env, t.name);
-    if (!t) return terr(`undefined var ${t.name}`);
+    if (!ty) return terr(`undefined var ${t.name}`);
     return [ty, t];
   }
   if (t.tag === 'Ann') {
@@ -243,7 +270,8 @@ const synth = (env, tvs, t) => {
     const [fn, args] = flattenApp(t);
     const [ty, ftm] = synth(env, tvs, fn);
     const [rt, targs] = collect(tvs, ty, args);
-    // console.log(`${showList(targs, ([t, ty]) => `${showTerm(t)} : ${showType(ty)}`)} -> ${showType(rt)}`);
+    // console.log(`${showList(targs, ([b, t, ty]) => b ? `@${showType(t)}` : `${showTerm(t)} : ${showType(ty)}`)} => ${showType(rt)}`);
+    handleArgs(env, tvs, targs);
     const result = foldl((acc, [b, t, ty]) => b ? AppT(acc, t) : App(acc, check(env, tvs, t, ty)), ftm, targs);
     return [rt, result];
   }
@@ -256,8 +284,11 @@ const synth = (env, tvs, t) => {
       const a = freshTMeta(tvs);
       const b = freshTMeta(tvs);
       const tm = check(Cons([t.name, a], env), tvs, t.body, b);
+      // question: is this monomorphic check needed/enough?
+      /*
       if (!isMono(a))
         return terr(`polymorphic type inferred for parameter of ${showTerm(t)}: ${showType(a)}`);
+      */
       return [TFun(a, b), Abs(t.name, tm, a)];
     }
   }
@@ -298,17 +329,49 @@ const collect = (tvs, ty_, args) => {
   return terr(`cannot collect ${showType(ty)} @ ${showList(args, showTerm)}`);
 };
 
+const handleArgs = (env, tvs, targs_) => {
+  const a = toArray(targs_, ([_, t, ty]) => [t, ty] , ([b]) => !b);
+  // first pass for guarded arguments
+  for (let i = 0; i < a.length; i++) {
+    const [tm, ty] = a[i];
+    const fty = force(ty);
+    if (fty.tag !== 'TMeta') {
+      check(env, tvs, tm, fty);
+      a.splice(i, 1);
+      i--;
+    }
+  }
+  // second pass for the rest
+  for (let i = 0; i < a.length; i++) {
+    const [tm, ty] = a[i];
+    check(env, tvs, tm, ty);
+  }
+};
+
 const synthappT = (tm, ty_, type) => {
   const ty = force(ty_);
   if (ty.tag === 'TForall') return [openTForall(ty, type), AppT(tm, type)];
   return terr(`not a forall in type application: ${showType(ty)} @ ${showType(type)}`);
 };
 
-const infer = (env, t) => {
+const infer = (env, t, gen = false) => {
   resetTMetaId();
   resetTSkolId();
   const [ty, tm] = synth(env, Nil, t);
-  return [prune(ty), pruneTerm(tm)];
+  const tms = tmetas(ty);
+  if (gen) {
+    let id = 0;
+    const tvs = tms.map(m => {
+      const tv = `\$${id++}`;
+      m.type = TVar(tv);
+      return tv;
+    });
+    return [tforall(tvs, prune(ty)), absT(tvs, pruneTerm(tm))];
+  } else {
+    if (tms.length > 0)
+      return terr(`unsolved tmetas in type: ${showType(prune(ty))}`);
+    return [prune(ty), pruneTerm(tm)];
+  }
 };
 
 // testing
@@ -334,6 +397,7 @@ const env = fromArray([
   ['pair', TForall('a', TForall('b', TFun(tv('a'), TFun(tv('b'), Pair(tv('a'), tv('b'))))))],
   ['pair2', TForall('b', TForall('a', TFun(tv('a'), TFun(tv('b'), Pair(tv('a'), tv('b'))))))],
   ['id', tid],
+  ['const', tforall(['a', 'b'], TFun(tv('a'), TFun(tv('b'), tv('a'))))],
   ['ids', List(tid)],
   ['inc', TFun(tv('Int'), tv('Int'))],
   ['choose', TForall('t', TFun(tv('t'), TFun(tv('t'), tv('t'))))],
@@ -353,6 +417,7 @@ const env = fromArray([
   ['int', tv('Int')],
 ]);
 
+let failed = 0;
 [
   // A
   Abs('x', Abs('y', v('x'))),
@@ -402,11 +467,16 @@ const env = fromArray([
   Ann(Abs('x', Abs('y', v('x'))), TForall('a', TFun(tv('a'), TForall('b', TFun(tv('b'), tv('a')))))),
   App(App(Ann(Abs('x', Abs('y', v('x'))), TForall('a', TFun(tv('a'), TForall('b', TFun(tv('b'), tv('a')))))), v('int')), v('str')),
   App(v('id'), Abs('x', v('x'))),
+  App(v('const'), v('id')),
+  Ann(App(v('const'), v('id')), tforall(['a', 'b'], TFun(tv('a'), TFun(tv('b'), tv('b'))))),
+  Ann(App(v('const'), v('id')), tforall(['a'], TFun(tv('a'), tid))),
 ].forEach(t => {
   try {
-    const [ty, tm] = infer(env, t);
+    const [ty, tm] = infer(env, t, true);
     console.log(`${showTerm(t)}\n: ${showType(ty)}\n=> ${showTerm(tm)}\n`);
   } catch(e) {
+    failed++;
     console.log(`${showTerm(t)}\n=> ${e}\n`);
   }
 });
+console.log(`failed: ${failed}`);

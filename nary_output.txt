@@ -1,0 +1,165 @@
+(\x. (\y. x))
+: (forall $0. (forall $1. ($0 -> ($1 -> $0))))
+=> (/\$0. (/\$1. (\(x : $0). (\(y : $1). x))))
+
+(choose id)
+: (forall $0. (($0 -> $0) -> ($0 -> $0)))
+=> (/\$0. ((choose @($0 -> $0)) (id @$0)))
+
+((choose id) : ((forall t. (t -> t)) -> (forall t. (t -> t))))
+: ((forall t. (t -> t)) -> (forall t. (t -> t)))
+=> ((choose @(forall t. (t -> t))) (/\t. (id @t)))
+
+((choose Nil) ids)
+: (List (forall t. (t -> t)))
+=> (((choose @(List (forall t. (t -> t)))) (Nil @(forall t. (t -> t)))) ids)
+
+(id auto)
+: ((forall t. (t -> t)) -> (forall t. (t -> t)))
+=> ((id @((forall t. (t -> t)) -> (forall t. (t -> t)))) auto)
+
+(id auto2)
+: (forall $0. ((forall t. (t -> t)) -> ($0 -> $0)))
+=> (/\$0. ((id @((forall t. (t -> t)) -> ($0 -> $0))) (auto2 @$0)))
+
+((choose id) auto)
+: ((forall t. (t -> t)) -> (forall t. (t -> t)))
+=> (((choose @((forall t. (t -> t)) -> (forall t. (t -> t)))) (id @(forall t. (t -> t)))) auto)
+
+((choose id) auto2)
+=> TypeError: failed (?2[] -> ?2[]) ~ (forall t. (t -> t))
+
+((f (choose id)) ids)
+=> TypeError: failed (forall t. (t -> t)) ~ (?2[] -> ?2[])
+
+((f ((choose id) : ((forall t. (t -> t)) -> (forall t. (t -> t))))) ids)
+: (forall t. (t -> t))
+=> (((f @(forall t. (t -> t))) ((choose @(forall t. (t -> t))) (/\t. (id @t)))) ids)
+
+(poly id)
+: ((Pair Int) Bool)
+=> (poly (/\t. (id @t)))
+
+(poly (\x. x))
+: ((Pair Int) Bool)
+=> (poly (/\t. (\(x : t). x)))
+
+((id poly) (\x. x))
+: ((Pair Int) Bool)
+=> (((id @((forall t. (t -> t)) -> ((Pair Int) Bool))) poly) (/\t. (\(x : t). x)))
+
+(length ids)
+: Int
+=> ((length @(forall t. (t -> t))) ids)
+
+(tail ids)
+: (List (forall t. (t -> t)))
+=> ((tail @(forall t. (t -> t))) ids)
+
+(head ids)
+: (forall t. (t -> t))
+=> ((head @(forall t. (t -> t))) ids)
+
+(single id)
+: (forall $0. (List ($0 -> $0)))
+=> (/\$0. ((single @($0 -> $0)) (id @$0)))
+
+((single id) : (List (forall t. (t -> t))))
+: (List (forall t. (t -> t)))
+=> ((single @(forall t. (t -> t))) (/\t. (id @t)))
+
+((Cons id) ids)
+: (List (forall t. (t -> t)))
+=> (((Cons @(forall t. (t -> t))) (/\t. (id @t))) ids)
+
+((Cons (\x. x)) ids)
+: (List (forall t. (t -> t)))
+=> (((Cons @(forall t. (t -> t))) (/\t. (\(x : t). x))) ids)
+
+((append (single inc)) (single id))
+: (List (Int -> Int))
+=> (((append @(Int -> Int)) ((single @(Int -> Int)) inc)) ((single @(Int -> Int)) (id @Int)))
+
+((g (single id)) ids)
+=> TypeError: failed (forall t. (t -> t)) ~ (?2[] -> ?2[])
+
+((g ((single id) : (List (forall t. (t -> t))))) ids)
+: (forall t. (t -> t))
+=> (((g @(forall t. (t -> t))) ((single @(forall t. (t -> t))) (/\t. (id @t)))) ids)
+
+((map poly) (single id))
+: (List ((Pair Int) Bool))
+=> ((((map @(forall t. (t -> t))) @((Pair Int) Bool)) poly) ((single @(forall t. (t -> t))) (/\t. (id @t))))
+
+((map head) (single ids))
+: (List (forall t. (t -> t)))
+=> ((((map @(List (forall t. (t -> t)))) @(forall t. (t -> t))) (head @(forall t. (t -> t)))) ((single @(List (forall t. (t -> t)))) ids))
+
+((app poly) id)
+: ((Pair Int) Bool)
+=> ((((app @(forall t. (t -> t))) @((Pair Int) Bool)) poly) (/\t. (id @t)))
+
+((revapp id) poly)
+: ((Pair Int) Bool)
+=> ((((revapp @(forall t. (t -> t))) @((Pair Int) Bool)) (/\t. (id @t))) poly)
+
+(runST argST)
+: Int
+=> ((runST @Int) (/\s. (argST @s)))
+
+((app runST) argST)
+: Int
+=> ((((app @(forall s. ((ST s) Int))) @Int) (runST @Int)) (/\s. (argST @s)))
+
+((revapp argST) runST)
+: Int
+=> ((((revapp @(forall s. ((ST s) Int))) @Int) (/\s. (argST @s))) (runST @Int))
+
+((k h) l)
+=> TypeError: failed (forall t. (t -> t)) ~ ('t$0 -> 't$0)
+
+((k (\x. (h x))) l)
+: (forall t. (Int -> (t -> t)))
+=> (((k @(forall t. (Int -> (t -> t)))) (/\t. (\(x : Int). ((h x) @t)))) l)
+
+(r (\x. (\y. y)))
+: Int
+=> (r (/\a. (\(x : a). (/\t. (\(y : t). y)))))
+
+(/\t. (\(x : t). x))
+: (forall t. (t -> t))
+=> (/\t. (\(x : t). x))
+
+(/\t. ((/\t. (\(x : t). x)) @t))
+: (forall t. (t -> t))
+=> (/\t. ((/\t. (\(x : t). x)) @t))
+
+((\x. x) (\x. x))
+: (forall $0. ($0 -> $0))
+=> (/\$0. ((\(x : ($0 -> $0)). x) (\(x : $0). x)))
+
+((\x. (\y. x)) : (forall a. (a -> (forall b. (b -> a)))))
+: (forall a. (a -> (forall b. (b -> a))))
+=> (/\a. (\(x : a). (/\b. (\(y : b). x))))
+
+((((\x. (\y. x)) : (forall a. (a -> (forall b. (b -> a))))) int) str)
+: Int
+=> (((((/\a. (\(x : a). (/\b. (\(y : b). x)))) @Int) int) @Str) str)
+
+(id (\x. x))
+: (forall $0. ($0 -> $0))
+=> (/\$0. ((id @($0 -> $0)) (\(x : $0). x)))
+
+(const id)
+: (forall $0. (forall $1. ($0 -> ($1 -> $1))))
+=> (/\$0. (/\$1. (((const @($1 -> $1)) @$0) (id @$1))))
+
+((const id) : (forall a. (forall b. (a -> (b -> b)))))
+: (forall a. (forall b. (a -> (b -> b))))
+=> (/\a. (/\b. (((const @(b -> b)) @a) (id @b))))
+
+((const id) : (forall a. (a -> (forall t. (t -> t)))))
+: (forall a. (a -> (forall t. (t -> t))))
+=> (/\a. (((const @(forall t. (t -> t))) @a) (/\t. (id @t))))
+
+failed: 4
