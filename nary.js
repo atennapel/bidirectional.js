@@ -6,6 +6,7 @@
   Does not do any generalization.
 
   TODO:
+  - fix elaboration eta: (/\t. (id @t))
   - monomorphic flag in meta variable?
   - is skolem tv prune safe?
 */
@@ -62,6 +63,7 @@ const Ann = (term, type) => ({ tag: 'Ann', term, type });
 const AbsT = (name, body) => ({ tag: 'AbsT', name, body });
 const AppT = (left, right) => ({ tag: 'AppT', left, right });
 
+const abs = (vs, body) => vs.reduceRight((x, y) => Abs(y, x), body);
 const absT = (tvs, body) => tvs.reduceRight((x, y) => AbsT(y, x), body);
 
 const showTerm = t => {
@@ -283,6 +285,7 @@ const synth = (env, tvs, t) => {
     } else {
       const a = freshTMeta(tvs);
       const b = freshTMeta(tvs);
+      // question: check or synth here?
       const tm = check(Cons([t.name, a], env), tvs, t.body, b);
       // question: is this monomorphic check needed/enough?
       /*
@@ -415,6 +418,7 @@ const env = fromArray([
   ['r', TFun(TForall('a', TFun(tv('a'), tid)), tv('Int'))],
   ['str', tv('Str')],
   ['int', tv('Int')],
+  ['inc', TFun(tv('Int'), tv('Int'))],
 ]);
 
 let failed = 0;
@@ -434,11 +438,21 @@ let failed = 0;
   App(v('poly'), Abs('x', v('x'))),
   App(App(v('id'), v('poly')), Abs('x', v('x'))),
 
+  // B
+  Abs('f', App(App(v('pair'), App(v('f'), v('int'))), App(v('f'), v('str')))),
+  Abs('xs', App(v('poly'), App(v('head'), v('xs')))),
+  abs(['f'], app(v('pair'), App(v('poly'), v('f')), App(v('inc'), App(v('f'), v('int'))))),
+  abs(['f'], app(v('pair'), App(v('inc'), App(v('f'), v('int'))), App(v('poly'), v('f')))),
+
   // C
   App(v('length'), v('ids')),
   App(v('tail'), v('ids')),
   App(v('head'), v('ids')),
   App(v('single'), v('id')),
+  App(v('single'), v('ids')),
+  App(v('Cons'), v('id')),
+  App(v('Cons'), v('ids')),
+  App(v('map'), v('poly')),
   Ann(App(v('single'), v('id')), List(tid)),
   App(App(v('Cons'), v('id')), v('ids')),
   App(App(v('Cons'), Abs('x', v('x'))), v('ids')),
@@ -482,4 +496,4 @@ let failed = 0;
     console.log(`${showTerm(t)}\n=> ${e}\n`);
   }
 });
-console.log(`failed: ${failed}`);
+console.log(`failed (should be 8): ${failed}`);

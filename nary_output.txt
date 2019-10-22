@@ -48,6 +48,18 @@
 : ((Pair Int) Bool)
 => (((id @((forall t. (t -> t)) -> ((Pair Int) Bool))) poly) (/\t. (\(x : t). x)))
 
+(\f. ((pair (f int)) (f str)))
+=> TypeError: failed Str ~ Int
+
+(\xs. (poly (head xs)))
+=> TypeError: solve failed: ?0[] := (List ('t$0 -> 't$0))
+
+(\f. ((pair (poly f)) (inc (f int))))
+=> TypeError: solve failed: ?0[] := ('t$0 -> 't$0)
+
+(\f. ((pair (inc (f int))) (poly f)))
+=> TypeError: failed Int ~ 't$0
+
 (length ids)
 : Int
 => ((length @(forall t. (t -> t))) ids)
@@ -63,6 +75,22 @@
 (single id)
 : (forall $0. (List ($0 -> $0)))
 => (/\$0. ((single @($0 -> $0)) (id @$0)))
+
+(single ids)
+: (List (List (forall t. (t -> t))))
+=> ((single @(List (forall t. (t -> t)))) ids)
+
+(Cons id)
+: (forall $0. ((List ($0 -> $0)) -> (List ($0 -> $0))))
+=> (/\$0. ((Cons @($0 -> $0)) (id @$0)))
+
+(Cons ids)
+: ((List (List (forall t. (t -> t)))) -> (List (List (forall t. (t -> t)))))
+=> ((Cons @(List (forall t. (t -> t)))) ids)
+
+(map poly)
+: ((List (forall t. (t -> t))) -> (List ((Pair Int) Bool)))
+=> (((map @(forall t. (t -> t))) @((Pair Int) Bool)) poly)
 
 ((single id) : (List (forall t. (t -> t))))
 : (List (forall t. (t -> t)))
@@ -174,4 +202,4 @@
 : (forall a. (a -> (forall t. (t -> t))))
 => (/\a. (((const @(forall t. (t -> t))) @a) (/\t. (\(x : t). x))))
 
-failed: 4
+failed: 8
