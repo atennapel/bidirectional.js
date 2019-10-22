@@ -202,4 +202,11 @@
 : (forall a. (a -> (forall t. (t -> t))))
 => (/\a. (((const @(forall t. (t -> t))) @a) (/\t. (\(x : t). x))))
 
-failed: 8
+(f1 x1)
+: Int
+=> (f1 (/\a. (/\b. ((x1 @b) @a))))
+
+(g1 xs1)
+=> TypeError: failed 'a$1 ~ 'b$0
+
+failed (should be 8): 9

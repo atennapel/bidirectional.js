@@ -419,6 +419,10 @@ const env = fromArray([
   ['str', tv('Str')],
   ['int', tv('Int')],
   ['inc', TFun(tv('Int'), tv('Int'))],
+  ['f1', TFun(tforall(['a', 'b'], tfun(tv('a'), tv('b'), tv('b'))), tv('Int'))],
+  ['x1', tforall(['b', 'a'], tfun(tv('a'), tv('b'), tv('b')))],
+  ['g1', TFun(TApp(tv('List'), tforall(['a', 'b'], tfun(tv('a'), tv('b'), tv('b')))), tv('Int'))],
+  ['xs1', TApp(tv('List'), tforall(['b', 'a'], tfun(tv('a'), tv('b'), tv('b'))))],
 ]);
 
 let failed = 0;
@@ -487,6 +491,8 @@ let failed = 0;
   App(v('const'), Abs('x', v('x'))),
   Ann(App(v('const'), Abs('x', v('x'))), tforall(['a', 'b'], TFun(tv('a'), TFun(tv('b'), tv('b'))))),
   Ann(App(v('const'), Abs('x', v('x'))), tforall(['a'], TFun(tv('a'), tid))),
+  App(v('f1'), v('x1')),
+  App(v('g1'), v('xs1')),
 ].forEach(t => {
   try {
     const [ty, tm] = infer(env, t, true);
@@ -496,4 +502,4 @@ let failed = 0;
     console.log(`${showTerm(t)}\n=> ${e}\n`);
   }
 });
-console.log(`failed (should be 8): ${failed}`);
+console.log(`failed (should be 9): ${failed}`);
