@@ -30,7 +30,8 @@
 => TypeError: failed (?2[] -> ?2[]) ~ (forall t. (t -> t))
 
 ((f (choose id)) ids)
-=> TypeError: failed (forall t. (t -> t)) ~ (?2[] -> ?2[])
+: (forall t. (t -> t))
+=> (((f @(forall t. (t -> t))) ((choose @(forall t. (t -> t))) (/\t. (id @t)))) ids)
 
 ((f ((choose id) : ((forall t. (t -> t)) -> (forall t. (t -> t))))) ids)
 : (forall t. (t -> t))
@@ -109,7 +110,8 @@
 => (((append @(Int -> Int)) ((single @(Int -> Int)) inc)) ((single @(Int -> Int)) (id @Int)))
 
 ((g (single id)) ids)
-=> TypeError: failed (forall t. (t -> t)) ~ (?2[] -> ?2[])
+: (forall t. (t -> t))
+=> (((g @(forall t. (t -> t))) ((single @(forall t. (t -> t))) (/\t. (id @t)))) ids)
 
 ((g ((single id) : (List (forall t. (t -> t))))) ids)
 : (forall t. (t -> t))
@@ -209,4 +211,26 @@
 (g1 xs1)
 => TypeError: failed 'a$1 ~ 'b$0
 
-failed (should be 8): 9
+(id lensFoo)
+: (forall $0. ((List (forall p. (((p Int) Int) -> ((p $0) $0)))) -> ($0 -> ((Pair Int) $0))))
+=> (/\$0. ((id @((List (forall p. (((p Int) Int) -> ((p $0) $0)))) -> ($0 -> ((Pair Int) $0)))) (lensFoo @$0)))
+
+((\x. x) lensFoo)
+: (forall $0. ((List (forall p. (((p Int) Int) -> ((p $0) $0)))) -> ($0 -> ((Pair Int) $0))))
+=> (/\$0. ((\(x : ((List (forall p. (((p Int) Int) -> ((p $0) $0)))) -> ($0 -> ((Pair Int) $0)))). x) (lensFoo @$0)))
+
+(app lensFoo)
+: (forall $0. ((List (forall p. (((p Int) Int) -> ((p $0) $0)))) -> ($0 -> ((Pair Int) $0))))
+=> (/\$0. (((app @(List (forall p. (((p Int) Int) -> ((p $0) $0))))) @($0 -> ((Pair Int) $0))) (lensFoo @$0)))
+
+(\x. (lensFoo x))
+: (forall $0. ((List (forall p. (((p Int) Int) -> ((p $0) $0)))) -> ($0 -> ((Pair Int) $0))))
+=> (/\$0. (\(x : (List (forall p. (((p Int) Int) -> ((p $0) $0))))). ((lensFoo @$0) x)))
+
+(\x. ((pair (nested x)) (nested2 x)))
+=> TypeError: failed (forall t. (t -> t)) ~ (Int -> Int)
+
+(\x. ((pair (nested2 x)) (nested x)))
+=> TypeError: failed (Int -> Int) ~ (forall t. (t -> t))
+
+failed: 9/61 (expected 9)

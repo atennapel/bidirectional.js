@@ -11,6 +11,17 @@
   - is skolem tv prune safe?
 */
 
+// these are heuristics to check the arguments in the order than can
+// improve impredicative instantiations
+const APP_CHECK_ORDER = [
+  (tm, ty) => tm.tag === 'Var' && ty.tag !== 'TMeta',
+  (tm, ty) => tm.tag === 'Ann' && ty.tag !== 'TMeta',
+  (_, ty) => ty.tag !== 'TMeta',
+  (tm, _) => tm.tag === 'Var',
+  (tm, _) => tm.tag === 'Ann',
+];
+
+// util
 const terr = msg => { throw new TypeError(msg) };
 
 // list
@@ -332,23 +343,20 @@ const collect = (tvs, ty_, args) => {
   return terr(`cannot collect ${showType(ty)} @ ${showList(args, showTerm)}`);
 };
 
-const handleArgs = (env, tvs, targs_) => {
-  const a = toArray(targs_, ([_, t, ty]) => [t, ty] , ([b]) => !b);
-  // first pass for guarded arguments
+const checkOnly = (env, tvs, a, f) => {
   for (let i = 0; i < a.length; i++) {
     const [tm, ty] = a[i];
     const fty = force(ty);
-    if (fty.tag !== 'TMeta') {
+    if (f(tm, fty)) {
       check(env, tvs, tm, fty);
-      a.splice(i, 1);
-      i--;
+      a.splice(i--, 1);
     }
   }
-  // second pass for the rest
-  for (let i = 0; i < a.length; i++) {
-    const [tm, ty] = a[i];
-    check(env, tvs, tm, ty);
-  }
+};
+const handleArgs = (env, tvs, targs_) => {
+  const a = toArray(targs_, ([_, t, ty]) => [t, ty] , ([b]) => !b);
+  APP_CHECK_ORDER.forEach(f => checkOnly(env, tvs, a, f));
+  checkOnly(env, tvs, a, () => true);
 };
 
 const synthappT = (tm, ty_, type) => {
@@ -382,10 +390,13 @@ const v = Var;
 const tv = TVar;
 function tfun() { return Array.from(arguments).reduceRight((x, y) => TFun(y, x)) }
 function app() { return Array.from(arguments).reduce(App) }
+function tapp() { return Array.from(arguments).reduce(TApp) }
 const tid = TForall('t', tfun(tv('t'), tv('t')));
 const List = t => TApp(tv('List'), t);
 const ST = (s, t) => TApp(TApp(tv('ST'), s), t);
 const Pair = (a, b) => TApp(TApp(tv('Pair'), a), b);
+const id = Abs('x', v('x'));
+const Lens = (s, t, a, b) => tforall(['p'], TFun(tapp(tv('p'), a, b), tapp(tv('p'), s, t)));
 
 const env = fromArray([
   ['head', TForall('t', TFun(List(tv('t')), tv('t')))],
@@ -423,9 +434,14 @@ const env = fromArray([
   ['x1', tforall(['b', 'a'], tfun(tv('a'), tv('b'), tv('b')))],
   ['g1', TFun(TApp(tv('List'), tforall(['a', 'b'], tfun(tv('a'), tv('b'), tv('b')))), tv('Int'))],
   ['xs1', TApp(tv('List'), tforall(['b', 'a'], tfun(tv('a'), tv('b'), tv('b'))))],
+  ['lensFoo', TForall('a', tfun(TApp(tv('List'), Lens(tv('a'), tv('a'), tv('Int'), tv('Int'))), tv('a'), Pair(tv('Int'), tv('a'))))],
+  ['nested', TFun(TApp(tv('List'), tid), tv('Int'))],
+  ['nested2', TFun(TApp(tv('List'), TFun(tv('Int'), tv('Int'))), tv('Int'))],
 ]);
 
 let failed = 0;
+let total = 0;
+const expectedFailed = 9;
 [
   // A
   Abs('x', Abs('y', v('x'))),
@@ -493,7 +509,14 @@ let failed = 0;
   Ann(App(v('const'), Abs('x', v('x'))), tforall(['a'], TFun(tv('a'), tid))),
   App(v('f1'), v('x1')),
   App(v('g1'), v('xs1')),
+  app(v('id'), v('lensFoo')),
+  app(id, v('lensFoo')),
+  app(v('app'), v('lensFoo')),
+  Abs('x', app(v('lensFoo'), v('x'))),
+  Abs('x', app(v('pair'), app(v('nested'), v('x')), app(v('nested2'), v('x')))),
+  Abs('x', app(v('pair'), app(v('nested2'), v('x')), app(v('nested'), v('x')))),
 ].forEach(t => {
+  total++;
   try {
     const [ty, tm] = infer(env, t, true);
     console.log(`${showTerm(t)}\n: ${showType(ty)}\n=> ${showTerm(tm)}\n`);
@@ -502,4 +525,4 @@ let failed = 0;
     console.log(`${showTerm(t)}\n=> ${e}\n`);
   }
 });
-console.log(`failed (should be 9): ${failed}`);
+console.log(`failed: ${failed}/${total} (expected ${expectedFailed})`);
